@@ -3,9 +3,11 @@ import { GitHubService } from './services/githubService';
 import { CodeQLService } from './services/codeqlService';
 import { UiProvider } from './providers/uiProvider';
 import { ResultsProvider } from './providers/resultsProvider';
+import { LoggerService } from './services/loggerService';
 
 export function activate(context: vscode.ExtensionContext) {
-    console.log('CodeQL Scanner extension is now active!');
+    const logger = LoggerService.getInstance();
+    logger.info('Extension', 'CodeQL Scanner extension is now active!');
 
     // Initialize services
     const githubService = new GitHubService();
@@ -41,10 +43,26 @@ export function activate(context: vscode.ExtensionContext) {
         }),
         vscode.commands.registerCommand('codeql-scanner.configure', async () => {
             await openConfigurationSettings();
+        }),
+        vscode.commands.registerCommand('codeql-scanner.showLogs', () => {
+            const logger = LoggerService.getInstance();
+            logger.show();
+        }),
+        vscode.commands.registerCommand('codeql-scanner.clearLogs', () => {
+            const logger = LoggerService.getInstance();
+            logger.clearLogs();
+            vscode.window.showInformationMessage('CodeQL Scanner logs cleared.');
         })
     ];
 
     context.subscriptions.push(...commands);
+
+    // Register logger disposal
+    context.subscriptions.push({
+        dispose: () => {
+            LoggerService.getInstance().dispose();
+        }
+    });
 
     // Set context for when results are available
     vscode.commands.executeCommand('setContext', 'codeql-scanner.hasResults', false);
@@ -56,12 +74,17 @@ async function handleCommand(
     resultsProvider: ResultsProvider,
     uiProvider?: UiProvider
 ) {
+    const logger = LoggerService.getInstance();
+    
     try {
+        logger.logCommand(command, 'started');
+        
         // Check if GitHub token is configured
         const config = vscode.workspace.getConfiguration('codeql-scanner');
         const token = config.get<string>('github.token');
         
         if (!token) {
+            logger.warn('Extension', 'GitHub token not configured');
             const result = await vscode.window.showErrorMessage(
                 'GitHub token is required. Please configure it in settings.',
                 'Open Settings'
@@ -110,11 +133,12 @@ async function handleCommand(
         // Refresh results view
         resultsProvider.refresh();
 
+        logger.logCommand(command, 'completed');
         vscode.window.showInformationMessage(`CodeQL ${command} completed successfully!`);
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
+        logger.logCommand(command, 'failed', error);
         vscode.window.showErrorMessage(`CodeQL ${command} failed: ${errorMessage}`);
-        console.error(`CodeQL ${command} error:`, error);
     }
 }
 
