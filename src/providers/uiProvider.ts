@@ -12,6 +12,8 @@ export class UiProvider implements vscode.WebviewViewProvider {
     private _resultsProvider?: ResultsProvider;
     private _githubService: GitHubService;
     private logger: LoggerService;
+    private _scanStartTime?: number;
+    private _fetchStartTime?: number;
 
     constructor(private readonly _extensionContext: vscode.ExtensionContext) {
         this._githubService = new GitHubService();
@@ -165,6 +167,8 @@ export class UiProvider implements vscode.WebviewViewProvider {
 
     private async runLocalScan() {
         try {
+            this._scanStartTime = Date.now();
+            
             this._view?.webview.postMessage({ 
                 command: 'scanStarted',
                 success: true,
@@ -174,22 +178,32 @@ export class UiProvider implements vscode.WebviewViewProvider {
             // Trigger the scan command
             await vscode.commands.executeCommand('codeql-scanner.scan');
             
+            const scanDuration = this._scanStartTime ? Date.now() - this._scanStartTime : 0;
+            const durationText = this.formatDuration(scanDuration);
+            
             this._view?.webview.postMessage({ 
                 command: 'scanCompleted',
                 success: true,
-                message: 'CodeQL scan completed successfully!'
+                message: `CodeQL scan completed successfully in ${durationText}!`,
+                duration: scanDuration
             });
         } catch (error) {
+            const scanDuration = this._scanStartTime ? Date.now() - this._scanStartTime : 0;
+            const durationText = this.formatDuration(scanDuration);
+            
             this._view?.webview.postMessage({ 
                 command: 'scanCompleted',
                 success: false,
-                message: `CodeQL scan failed: ${error}`
+                message: `CodeQL scan failed after ${durationText}: ${error}`,
+                duration: scanDuration
             });
         }
     }
 
     private async fetchRemoteAlerts() {
         try {
+            this._fetchStartTime = Date.now();
+            
             this._view?.webview.postMessage({ 
                 command: 'fetchStarted',
                 success: true,
@@ -234,17 +248,25 @@ export class UiProvider implements vscode.WebviewViewProvider {
                 vscode.commands.executeCommand('setContext', 'codeql-scanner.hasResults', scanResults.length > 0);
             }
 
+            const fetchDuration = this._fetchStartTime ? Date.now() - this._fetchStartTime : 0;
+            const durationText = this.formatDuration(fetchDuration);
+
             this._view?.webview.postMessage({ 
                 command: 'fetchCompleted',
                 success: true,
-                message: `Fetched ${scanResults.length} CodeQL security alerts from GitHub`
+                message: `Fetched ${scanResults.length} CodeQL security alerts from GitHub in ${durationText}`,
+                duration: fetchDuration
             });
 
         } catch (error) {
+            const fetchDuration = this._fetchStartTime ? Date.now() - this._fetchStartTime : 0;
+            const durationText = this.formatDuration(fetchDuration);
+            
             this._view?.webview.postMessage({ 
                 command: 'fetchCompleted',
                 success: false,
-                message: `Failed to fetch remote alerts: ${error}`
+                message: `Failed to fetch remote alerts after ${durationText}: ${error}`,
+                duration: fetchDuration
             });
         }
     }
@@ -353,6 +375,27 @@ export class UiProvider implements vscode.WebviewViewProvider {
             topFiles,
             scanDate: new Date().toISOString()
         };
+    }
+
+    private formatDuration(milliseconds: number): string {
+        if (milliseconds < 1000) {
+            return `${milliseconds}ms`;
+        }
+        
+        const seconds = Math.floor(milliseconds / 1000);
+        if (seconds < 60) {
+            return `${seconds}s`;
+        }
+        
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = seconds % 60;
+        if (minutes < 60) {
+            return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
+        }
+        
+        const hours = Math.floor(minutes / 60);
+        const remainingMinutes = minutes % 60;
+        return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
     }
 
     private _getHtmlForWebview(webview: vscode.Webview) {
@@ -552,15 +595,31 @@ export class UiProvider implements vscode.WebviewViewProvider {
             font-style: italic;
             padding: 20px;
         }
+        
+        .timer-display {
+            font-size: 0.9em;
+            color: var(--vscode-descriptionForeground);
+            margin-left: 10px;
+            font-family: monospace;
+        }
+        
+        .scan-section {
+            position: relative;
+        }
     </style>
 </head>
 <body>
     <h2>CodeQL Scanner Configuration</h2>
 
-    <div class="section">
+    <div class="section scan-section">
         <h3>Local CodeQL Scanner</h3>
-        <button onclick="runLocalScan()" id="scanButton">🔍 Run Local CodeQL Scanner</button>
-        <button onclick="fetchRemoteAlerts()" id="fetchButton">🔄 Fetch Remote Security Alerts</button>
+        <div>
+            <button onclick="runLocalScan()" id="scanButton">🔍 Run Local CodeQL Scanner</button>
+            <span id="scanTimer" class="timer-display" style="display: none;"></span>
+        </div>
+        <div>
+            <button onclick="fetchRemoteAlerts()" id="fetchButton">🔄 Fetch Remote Security Alerts</button>
+        </div>
     </div>
 
     <div class="section" id="summarySection" style="display: none;">
@@ -714,8 +773,13 @@ export class UiProvider implements vscode.WebviewViewProvider {
             scanButton.disabled = true;
             scanButton.textContent = '⏳ Scanning...';
             
+            // Clear any previous timer display
+            clearTimerDisplay('scanTimer');
+            startTimer('scanTimer');
+            
             vscode.postMessage({ command: 'runLocalScan' });
         }
+        
         function fetchRemoteAlerts() {
             const fetchButton = document.getElementById('fetchButton');
             if (fetchButton) {
@@ -723,7 +787,61 @@ export class UiProvider implements vscode.WebviewViewProvider {
                 fetchButton.textContent = '⏳ Fetching Alerts...';
             }
             
+            // Clear any previous timer display
+            clearTimerDisplay('fetchTimer');
+            startTimer('fetchTimer');
+            
             vscode.postMessage({ command: 'fetchRemoteAlerts' });
+        }
+        
+        let timers = {};
+        
+        function startTimer(timerId) {
+            const startTime = Date.now();
+            timers[timerId] = {
+                startTime: startTime,
+                interval: setInterval(() => {
+                    updateTimerDisplay(timerId, Date.now() - startTime);
+                }, 100)
+            };
+        }
+        
+        function stopTimer(timerId) {
+            if (timers[timerId]) {
+                clearInterval(timers[timerId].interval);
+                delete timers[timerId];
+            }
+        }
+        
+        function clearTimerDisplay(timerId) {
+            const timerEl = document.getElementById(timerId);
+            if (timerEl) {
+                timerEl.textContent = '';
+                timerEl.style.display = 'none';
+            }
+        }
+        
+        function updateTimerDisplay(timerId, duration) {
+            const timerEl = document.getElementById(timerId);
+            if (timerEl) {
+                timerEl.style.display = 'inline';
+                timerEl.textContent = formatDuration(duration);
+            }
+        }
+        
+        function formatDuration(milliseconds) {
+            if (milliseconds < 1000) {
+                return Math.floor(milliseconds / 100) / 10 + 's';
+            }
+            
+            const seconds = Math.floor(milliseconds / 1000);
+            if (seconds < 60) {
+                return seconds + 's';
+            }
+            
+            const minutes = Math.floor(seconds / 60);
+            const remainingSeconds = seconds % 60;
+            return minutes + 'm ' + (remainingSeconds > 0 ? remainingSeconds + 's' : '');
         }
 
         
@@ -817,7 +935,16 @@ export class UiProvider implements vscode.WebviewViewProvider {
                 case 'scanCompleted':
                     const scanButton = document.getElementById('scanButton');
                     scanButton.disabled = false;
-                    scanButton.textContent = '🔍 Run Local CodeQL Scan';
+                    scanButton.textContent = '🔍 Run Local CodeQL Scanner';
+                    
+                    stopTimer('scanTimer');
+                    
+                    // Show final duration in timer display
+                    if (message.duration !== undefined) {
+                        updateTimerDisplay('scanTimer', message.duration);
+                        setTimeout(() => clearTimerDisplay('scanTimer'), 5000);
+                    }
+                    
                     showMessage(message.message, !message.success);
                     break;
                     
@@ -831,6 +958,15 @@ export class UiProvider implements vscode.WebviewViewProvider {
                         fetchButton.disabled = false;
                         fetchButton.textContent = '🔄 Fetch Remote Security Alerts';
                     }
+                    
+                    stopTimer('fetchTimer');
+                    
+                    // Show final duration in timer display
+                    if (message.duration !== undefined) {
+                        updateTimerDisplay('fetchTimer', message.duration);
+                        setTimeout(() => clearTimerDisplay('fetchTimer'), 5000);
+                    }
+                    
                     showMessage(message.message, !message.success);
                     break;
                     
