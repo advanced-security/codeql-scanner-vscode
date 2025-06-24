@@ -5,7 +5,7 @@ import { UiProvider } from './providers/uiProvider';
 import { ResultsProvider } from './providers/resultsProvider';
 import { LoggerService } from './services/loggerService';
 
-export function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext) {
     const logger = LoggerService.getInstance();
     logger.info('Extension', 'CodeQL Scanner extension is now active!');
 
@@ -52,6 +52,9 @@ export function activate(context: vscode.ExtensionContext) {
             const logger = LoggerService.getInstance();
             logger.clearLogs();
             vscode.window.showInformationMessage('CodeQL Scanner logs cleared.');
+        }),
+        vscode.commands.registerCommand('codeql-scanner.reloadSARIF', async () => {
+            await autoLoadExistingSARIFFiles(codeqlService, resultsProvider, uiProvider);
         })
     ];
 
@@ -66,6 +69,9 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Set context for when results are available
     vscode.commands.executeCommand('setContext', 'codeql-scanner.hasResults', false);
+
+    // Auto-load existing SARIF files
+    await autoLoadExistingSARIFFiles(codeqlService, resultsProvider, uiProvider);
 }
 
 async function handleCommand(
@@ -144,6 +150,57 @@ async function handleCommand(
 
 async function openConfigurationSettings() {
     await vscode.commands.executeCommand('workbench.action.openSettings', 'codeql-scanner');
+}
+
+async function autoLoadExistingSARIFFiles(
+    codeqlService: CodeQLService,
+    resultsProvider: ResultsProvider,
+    uiProvider: UiProvider
+) {
+    const logger = LoggerService.getInstance();
+    
+    try {
+        logger.info('Extension', 'Checking for existing SARIF files...');
+        
+        const existingResults = await codeqlService.loadExistingSARIFFiles();
+        
+        if (existingResults && existingResults.length > 0) {
+            logger.info('Extension', `Found ${existingResults.length} existing results`);
+            
+            resultsProvider.setResults(existingResults);
+            uiProvider.updateScanResults(existingResults);
+            vscode.commands.executeCommand('setContext', 'codeql-scanner.hasResults', true);
+            
+            // Group results by language for better user feedback
+            const languageGroups = existingResults.reduce((groups, result) => {
+                const lang = result.language || 'unknown';
+                groups[lang] = (groups[lang] || 0) + 1;
+                return groups;
+            }, {} as { [key: string]: number });
+            
+            const languageSummary = Object.entries(languageGroups)
+                .map(([lang, count]) => `${lang}: ${count}`)
+                .join(', ');
+            
+            vscode.window.showInformationMessage(
+                `Loaded ${existingResults.length} existing CodeQL results (${languageSummary})`
+            );
+        } else {
+            logger.info('Extension', 'No existing SARIF files found');
+        }
+    } catch (error) {
+        logger.error('Extension', 'Failed to load existing SARIF files', error);
+        // Don't show error to user as this is a background operation
+        // But we could optionally show a debug message
+        const config = vscode.workspace.getConfiguration('codeql-scanner');
+        const showDebugMessages = config.get<boolean>('showDebugMessages', false);
+        
+        if (showDebugMessages) {
+            vscode.window.showWarningMessage(
+                `Failed to auto-load existing SARIF files: ${error instanceof Error ? error.message : String(error)}`
+            );
+        }
+    }
 }
 
 export function deactivate() {}

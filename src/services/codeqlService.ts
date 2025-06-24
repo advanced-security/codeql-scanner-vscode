@@ -890,4 +890,140 @@ export class CodeQLService {
         return "medium";
     }
   }
+
+  public async loadExistingSARIFFiles(): Promise<ScanResult[]> {
+    this.logger.logServiceCall("CodeQLService", "loadExistingSARIFFiles", "started");
+    
+    try {
+      const config = vscode.workspace.getConfiguration("codeql-scanner");
+      const workspaceFolder = this.getWorkspaceFolder();
+      const codeqlDir = this.getCodeQLDirectory();
+      const repoName = this.getRepositoryName();
+      
+      const homeDir = process.env.HOME || process.env.USERPROFILE;
+      if (!homeDir) {
+        throw new Error("Could not determine home directory");
+      }
+
+      
+      const resultsDir = path.join(codeqlDir, "results");
+      this.logger.info("CodeQLService", `Results directory: ${resultsDir}`);
+      
+      // Check if results directory exists
+      if (!fs.existsSync(resultsDir)) {
+        this.logger.info("CodeQLService", `Results directory does not exist: ${resultsDir}`);
+        return [];
+      }
+      
+      const allResults: ScanResult[] = [];
+      
+      // Get repository info from configuration
+      const owner = config.get<string>("github.owner");
+      const name = config.get<string>("github.repo");
+      
+      if (!owner || !name) {
+        this.logger.warn("CodeQLService", "Repository owner/name not configured, checking for any SARIF files");
+        
+        // If repo info not configured, try to find any SARIF files that match pattern
+        const files = fs.readdirSync(resultsDir);
+        const sarifFiles = files.filter(file => file.endsWith('.sarif'));
+        
+        this.logger.info("CodeQLService", `Found ${sarifFiles.length} SARIF files in ${resultsDir}`);
+        
+        for (const file of sarifFiles) {
+          const filePath = path.join(resultsDir, file);
+          const language = this.extractLanguageFromFileName(file);
+          
+          if (language) {
+            this.logger.info("CodeQLService", `Loading SARIF file: ${file} (language: ${language})`);
+            const results = await this.loadSARIFFile(filePath, workspaceFolder, language);
+            allResults.push(...results);
+          } else {
+            this.logger.warn("CodeQLService", `Could not extract language from filename: ${file}`);
+          }
+        }
+      } else {
+        // Look for specific SARIF files matching the pattern
+        const languages = config.get<string[]>("languages", []);
+        
+        if (languages.length === 0) {
+          this.logger.warn("CodeQLService", "No languages configured, cannot look for specific SARIF files");
+          return [];
+        }
+        
+        let currentSHA: string;
+        try {
+          currentSHA = await this.getCurrentGitSHA();
+        } catch (error) {
+          this.logger.warn("CodeQLService", "Could not get current Git SHA, trying to load any matching files");
+          // If we can't get SHA, try to find files without SHA matching
+          const files = fs.readdirSync(resultsDir);
+          const matchingFiles = files.filter(file => 
+            file.startsWith(`${owner}-${name}-`) && file.endsWith('.sarif')
+          );
+          
+          for (const file of matchingFiles) {
+            const filePath = path.join(resultsDir, file);
+            const language = this.extractLanguageFromFileName(file);
+            
+            if (language && languages.includes(language)) {
+              this.logger.info("CodeQLService", `Loading SARIF file: ${file} (language: ${language})`);
+              const results = await this.loadSARIFFile(filePath, workspaceFolder, language);
+              allResults.push(...results);
+            }
+          }
+          
+          this.logger.logServiceCall("CodeQLService", "loadExistingSARIFFiles", "completed", {
+            resultCount: allResults.length,
+          });
+          
+          return allResults;
+        }
+        
+        for (const language of languages) {
+          const fileName = `${owner}-${name}-${language}-${currentSHA}.sarif`;
+          const filePath = path.join(resultsDir, fileName);
+          
+          if (fs.existsSync(filePath)) {
+            this.logger.info("CodeQLService", `Found SARIF file: ${fileName}`);
+            const results = await this.loadSARIFFile(filePath, workspaceFolder, language);
+            allResults.push(...results);
+          } else {
+            this.logger.debug("CodeQLService", `SARIF file not found: ${fileName}`);
+          }
+        }
+      }
+      
+      this.logger.logServiceCall("CodeQLService", "loadExistingSARIFFiles", "completed", {
+        resultCount: allResults.length,
+        filesChecked: resultsDir
+      });
+      
+      return allResults;
+    } catch (error) {
+      this.logger.logServiceCall("CodeQLService", "loadExistingSARIFFiles", "failed", error);
+      throw error;
+    }
+  }
+
+  private async loadSARIFFile(filePath: string, workspaceFolder: string, language: string): Promise<ScanResult[]> {
+    try {
+      const sarifContent = fs.readFileSync(filePath, "utf8");
+      const sarif = JSON.parse(sarifContent);
+      return this.parseSARIFResults(sarif, workspaceFolder, language);
+    } catch (error) {
+      this.logger.error("CodeQLService", `Failed to load SARIF file: ${filePath}`, error);
+      return [];
+    }
+  }
+
+  private extractLanguageFromFileName(fileName: string): string | null {
+    // Extract language from filename pattern: owner-repo-lang-sha.sarif
+    const parts = fileName.replace('.sarif', '').split('-');
+    if (parts.length >= 3) {
+      // Assume language is the third-to-last part before SHA
+      return parts[parts.length - 2];
+    }
+    return null;
+  }
 }
