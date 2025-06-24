@@ -42,14 +42,31 @@ export class ResultsProvider implements vscode.TreeDataProvider<ResultItem> {
                 )
             );
         } else if (element.type === 'language') {
-            // Second level - individual results
+            // Second level - group by severity within language
+            const severityGroups = this.groupBySeverity(element.results!);
+            const sortedSeverities = this.sortSeverityGroups(severityGroups);
+            return Promise.resolve(
+                sortedSeverities.map(([severity, results]) => 
+                    new ResultItem(
+                        `${this.getSeverityDisplayName(severity)} (${results.length})`,
+                        vscode.TreeItemCollapsibleState.Expanded,
+                        'severity',
+                        element.language,
+                        results,
+                        undefined,
+                        severity
+                    )
+                )
+            );
+        } else if (element.type === 'severity') {
+            // Third level - individual results
             return Promise.resolve(
                 element.results!.map(result => 
                     new ResultItem(
                         `${result.ruleId}: ${result.message}`,
                         vscode.TreeItemCollapsibleState.None,
                         'result',
-                        undefined,
+                        element.language,
                         undefined,
                         result
                     )
@@ -70,16 +87,58 @@ export class ResultsProvider implements vscode.TreeDataProvider<ResultItem> {
             return groups;
         }, {} as { [language: string]: ScanResult[] });
     }
+
+    private groupBySeverity(results: ScanResult[]): { [severity: string]: ScanResult[] } {
+        return results.reduce((groups, result) => {
+            const severity = result.severity || 'unknown';
+            if (!groups[severity]) {
+                groups[severity] = [];
+            }
+            groups[severity].push(result);
+            return groups;
+        }, {} as { [severity: string]: ScanResult[] });
+    }
+
+    private getSeverityDisplayName(severity: string): string {
+        const severityMap: { [key: string]: string } = {
+            'critical': '🔥 Critical',
+            'high': '⚠️ High',
+            'error': '⚠️ High',
+            'medium': '⚡ Medium',
+            'warning': '⚡ Medium',
+            'low': 'ℹ️ Low',
+            'info': 'ℹ️ Low',
+            'unknown': '❓ Unknown'
+        };
+        return severityMap[severity] || `❓ ${severity.charAt(0).toUpperCase() + severity.slice(1)}`;
+    }
+
+    private sortSeverityGroups(severityGroups: { [severity: string]: ScanResult[] }): [string, ScanResult[]][] {
+        const severityOrder = ['critical', 'high', 'error', 'medium', 'warning', 'low', 'info', 'unknown'];
+        
+        return Object.entries(severityGroups).sort(([a], [b]) => {
+            const aIndex = severityOrder.indexOf(a);
+            const bIndex = severityOrder.indexOf(b);
+            
+            // If severity not found in order, put it at the end
+            if (aIndex === -1 && bIndex === -1) return a.localeCompare(b);
+            if (aIndex === -1) return 1;
+            if (bIndex === -1) return -1;
+            
+            return aIndex - bIndex;
+        });
+    }
 }
 
 export class ResultItem extends vscode.TreeItem {
     constructor(
         public readonly label: string,
         public readonly collapsibleState: vscode.TreeItemCollapsibleState,
-        public readonly type: 'language' | 'result',
+        public readonly type: 'language' | 'severity' | 'result',
         public readonly language?: string,
         public readonly results?: ScanResult[],
-        public readonly result?: ScanResult
+        public readonly result?: ScanResult,
+        public readonly severity?: string
     ) {
         super(label, collapsibleState);
 
@@ -93,6 +152,8 @@ export class ResultItem extends vscode.TreeItem {
     private getTooltip(): string {
         if (this.type === 'language') {
             return `${this.results?.length || 0} ${this.language} language issues`;
+        } else if (this.type === 'severity') {
+            return `${this.results?.length || 0} ${this.severity} severity issues in ${this.language}`;
         } else if (this.result) {
             return `${this.result.ruleId}: ${this.result.message}\\nFile: ${this.result.location.file}\\nLine: ${this.result.location.startLine}`;
         }
@@ -121,6 +182,22 @@ export class ResultItem extends vscode.TreeItem {
                     return new vscode.ThemeIcon('symbol-struct', new vscode.ThemeColor('symbolIcon.structForeground'));
                 default:
                     return new vscode.ThemeIcon('file-code');
+            }
+        } else if (this.type === 'severity') {
+            switch (this.severity) {
+                case 'critical':
+                    return new vscode.ThemeIcon('error', new vscode.ThemeColor('errorForeground'));
+                case 'error':
+                case 'high':
+                    return new vscode.ThemeIcon('error', new vscode.ThemeColor('errorForeground'));
+                case 'warning':
+                case 'medium':
+                    return new vscode.ThemeIcon('warning', new vscode.ThemeColor('warningForeground'));
+                case 'info':
+                case 'low':
+                    return new vscode.ThemeIcon('info', new vscode.ThemeColor('infoForeground'));
+                default:
+                    return new vscode.ThemeIcon('circle-outline');
             }
         } else if (this.type === 'result') {
             switch (this.result?.severity) {

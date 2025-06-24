@@ -788,7 +788,7 @@ export class CodeQLService {
     const outputPath = path.join(
       codeqlDir,
       "results",
-      `${repoName}-${sha}.sarif`
+      `${repoName}-${language}-${sha}.sarif`
     );
 
     // Build the query suite argument
@@ -833,8 +833,17 @@ export class CodeQLService {
     for (const run of sarif.runs) {
       if (!run.results) continue;
 
+      let tool = run.tool || {};
+      let driver = tool.driver || {};
+      let rules = driver.rules || [];
+
       for (const result of run.results) {
         if (!result.locations || result.locations.length === 0) continue;
+
+        const rule = rules.find((r: any) => r.id === result.ruleId);
+        // Use sub-severity from rules if available, otherwise map severity
+        // const severity = result.properties?.["sub-severity"] || this.mapSeverity(result.level);
+        const severity = rule?.properties?.["sub-severity"] || this.mapSeverity(result.level);
 
         const location = result.locations[0];
         const physicalLocation = location.physicalLocation;
@@ -849,7 +858,7 @@ export class CodeQLService {
 
         results.push({
           ruleId: result.ruleId || "unknown",
-          severity: this.mapSeverity(result.level),
+          severity: severity,
           message: result.message?.text || "No message",
           language: language,
           location: {
