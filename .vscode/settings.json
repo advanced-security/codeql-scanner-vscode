@@ -1,0 +1,14 @@
+{
+    "codeql-scanner.github.owner": "",
+    "codeql-scanner.github.repo": "",
+    "codeql-scanner.searchPaths": [],
+    "codeql-scanner.suites": [
+        "security-extended",
+        "security-and-quality"
+    ],
+    "codeql-scanner.languages": [
+        "javascript",
+        "typescript"
+    ],
+    "codeql-scanner.useLocalScan": true
+}
