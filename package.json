@@ -1,0 +1,212 @@
+{
+  "name": "codeql-scanner-vscode",
+  "displayName": "CodeQL Scanner",
+  "description": "VSCode extension for CodeQL to scan and analyze code for vulnerabilities using GitHub's CodeQL.",
+  "version": "0.0.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/geekmasher/codeql-scanner-vscode.git"
+  },
+  "icon": "src/assets/VS-marketplace-CodeQL-icon.png",
+  "publisher": "codeql-scanner",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Other",
+    "Testing",
+    "Linters"
+  ],
+  "keywords": [
+    "codeql",
+    "security",
+    "github",
+    "scanning",
+    "analysis",
+    "sast",
+    "static-analysis",
+    "vulnerability",
+    "code-security"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "codeql-scanner.scan",
+        "title": "CodeQL: Run Scan",
+        "category": "CodeQL Scanner"
+      },
+      {
+        "command": "codeql-scanner.init",
+        "title": "CodeQL: Initialize Repository",
+        "category": "CodeQL Scanner"
+      },
+      {
+        "command": "codeql-scanner.analysis",
+        "title": "CodeQL: Run Analysis",
+        "category": "CodeQL Scanner"
+      },
+      {
+        "command": "codeql-scanner.configure",
+        "title": "CodeQL: Configure Settings",
+        "category": "CodeQL Scanner"
+      }
+    ],
+    "configuration": {
+      "title": "CodeQL Scanner",
+      "properties": {
+        "codeql-scanner.github.token": {
+          "type": "string",
+          "default": "",
+          "description": "GitHub API token for authentication",
+          "scope": "application"
+        },
+        "codeql-scanner.github.owner": {
+          "type": "string",
+          "default": "",
+          "description": "GitHub repository owner/organization",
+          "scope": "resource"
+        },
+        "codeql-scanner.github.repo": {
+          "type": "string",
+          "default": "",
+          "description": "GitHub repository name",
+          "scope": "resource"
+        },
+        "codeql-scanner.searchPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Paths to search for source code",
+          "scope": "resource"
+        },
+        "codeql-scanner.suites": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "security-extended",
+            "security-and-quality"
+          ],
+          "description": "CodeQL query suites to run",
+          "scope": "resource"
+        },
+        "codeql-scanner.languages": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "javascript",
+              "typescript",
+              "python",
+              "java",
+              "csharp",
+              "cpp",
+              "go",
+              "ruby"
+            ]
+          },
+          "default": [
+            "javascript",
+            "typescript"
+          ],
+          "description": "Programming languages to analyze",
+          "scope": "resource"
+        },
+        "codeql-scanner.codeqlPath": {
+          "type": "string",
+          "default": "codeql",
+          "description": "Path to the CodeQL CLI executable",
+          "scope": "application"
+        },
+        "codeql-scanner.useLocalScan": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use local CodeQL CLI for scanning instead of GitHub Actions",
+          "scope": "resource"
+        }
+      }
+    },
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "codeql-scanner.scan",
+          "when": "workspaceContainsCodeqlConfig || true"
+        },
+        {
+          "command": "codeql-scanner.init",
+          "when": "workspaceContainsCodeqlConfig || true"
+        },
+        {
+          "command": "codeql-scanner.analysis",
+          "when": "workspaceContainsCodeqlConfig || true"
+        },
+        {
+          "command": "codeql-scanner.configure",
+          "when": "workspaceContainsCodeqlConfig || true"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "codeql-scanner.scan",
+          "group": "codeql@1"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "codeql-scanner",
+          "title": "CodeQL Scanner",
+          "icon": "$(shield)"
+        }
+      ]
+    },
+    "views": {
+      "codeql-scanner": [
+        {
+          "id": "codeql-scanner.results",
+          "name": "Scan Results",
+          "when": "codeql-scanner.hasResults"
+        },
+        {
+          "id": "codeql-scanner.config",
+          "name": "Configuration",
+          "type": "webview"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "vscode:bundle": "npm run compile && npm run package",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js",
+    "package": "./scripts/package-extension.sh",
+    "test-extension": "./scripts/test-extension.sh",
+    "test-codeql": "./scripts/test-codeql-setup.sh"
+  },
+  "devDependencies": {
+    "@types/node": "16.x",
+    "@types/vscode": "^1.74.0",
+    "@typescript-eslint/eslint-plugin": "^5.45.0",
+    "@typescript-eslint/parser": "^5.45.0",
+    "eslint": "^8.28.0",
+    "typescript": "^4.9.4"
+  },
+  "dependencies": {
+    "@octokit/rest": "^19.0.7",
+    "@types/js-yaml": "^4.0.9",
+    "axios": "^1.3.4",
+    "js-yaml": "^4.1.0"
+  }
+}
