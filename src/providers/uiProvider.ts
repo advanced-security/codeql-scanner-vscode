@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { ResultsProvider } from './resultsProvider';
 import { ScanResult } from '../services/codeqlService';
 import { GitHubService } from '../services/githubService';
@@ -230,6 +231,7 @@ export class UiProvider implements vscode.WebviewViewProvider {
                 ruleId: alert.rule?.id || 'unknown',
                 severity: this.mapGitHubSeverityToLocal(alert.rule?.severity),
                 message: alert.message?.text || alert.rule?.description || 'No description',
+                language: this.detectLanguageFromFile(alert.most_recent_instance?.location?.path || 'unknown'),
                 location: {
                     file: alert.most_recent_instance?.location?.path || 'unknown',
                     startLine: alert.most_recent_instance?.location?.start_line || 1,
@@ -398,6 +400,35 @@ export class UiProvider implements vscode.WebviewViewProvider {
         return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
     }
 
+    private detectLanguageFromFile(filePath: string): string {
+        const extension = path.extname(filePath).toLowerCase();
+        
+        // Map file extensions to languages
+        const extensionMap: { [key: string]: string } = {
+            '.js': 'javascript',
+            '.jsx': 'javascript',
+            '.ts': 'javascript', // TypeScript is handled by JavaScript extractor
+            '.tsx': 'javascript',
+            '.py': 'python',
+            '.java': 'java',
+            '.cs': 'csharp',
+            '.cpp': 'cpp',
+            '.c': 'cpp',
+            '.cc': 'cpp',
+            '.cxx': 'cpp',
+            '.h': 'cpp',
+            '.hpp': 'cpp',
+            '.go': 'go',
+            '.rb': 'ruby',
+            '.php': 'php',
+            '.swift': 'swift',
+            '.kt': 'kotlin',
+            '.scala': 'scala',
+        };
+
+        return extensionMap[extension] || 'unknown';
+    }
+
     private _getHtmlForWebview(webview: vscode.Webview) {
         return `<!DOCTYPE html>
 <html lang="en">
@@ -539,54 +570,185 @@ export class UiProvider implements vscode.WebviewViewProvider {
         .summary-card {
             background-color: var(--vscode-input-background);
             border: 1px solid var(--vscode-input-border);
-            border-radius: 3px;
-            padding: 12px;
+            border-radius: 6px;
+            padding: 15px 12px;
             text-align: center;
+            transition: all 0.2s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .summary-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+        
+        .summary-card.critical {
+            background: linear-gradient(135deg, rgba(255, 67, 67, 0.08) 0%, rgba(255, 67, 67, 0.12) 100%);
+            border-color: rgba(255, 67, 67, 0.4);
+        }
+        
+        .summary-card.critical:hover {
+            background: linear-gradient(135deg, rgba(255, 67, 67, 0.12) 0%, rgba(255, 67, 67, 0.18) 100%);
+            border-color: rgba(255, 67, 67, 0.6);
+        }
+        
+        .summary-card.high {
+            background: linear-gradient(135deg, rgba(255, 87, 34, 0.08) 0%, rgba(255, 87, 34, 0.12) 100%);
+            border-color: rgba(255, 87, 34, 0.4);
+        }
+        
+        .summary-card.high:hover {
+            background: linear-gradient(135deg, rgba(255, 87, 34, 0.12) 0%, rgba(255, 87, 34, 0.18) 100%);
+            border-color: rgba(255, 87, 34, 0.6);
+        }
+        
+        .summary-card.medium {
+            background: linear-gradient(135deg, rgba(255, 193, 7, 0.08) 0%, rgba(255, 193, 7, 0.12) 100%);
+            border-color: rgba(255, 193, 7, 0.4);
+        }
+        
+        .summary-card.medium:hover {
+            background: linear-gradient(135deg, rgba(255, 193, 7, 0.12) 0%, rgba(255, 193, 7, 0.18) 100%);
+            border-color: rgba(255, 193, 7, 0.6);
+        }
+        
+        .summary-card.low {
+            background: linear-gradient(135deg, rgba(33, 150, 243, 0.08) 0%, rgba(33, 150, 243, 0.12) 100%);
+            border-color: rgba(33, 150, 243, 0.4);
+        }
+        
+        .summary-card.low:hover {
+            background: linear-gradient(135deg, rgba(33, 150, 243, 0.12) 0%, rgba(33, 150, 243, 0.18) 100%);
+            border-color: rgba(33, 150, 243, 0.6);
         }
         
         .summary-number {
-            font-size: 24px;
+            font-size: 28px;
             font-weight: bold;
             color: var(--vscode-foreground);
+            margin-bottom: 4px;
+            display: block;
         }
         
         .summary-label {
-            font-size: 12px;
+            font-size: 11px;
             color: var(--vscode-descriptionForeground);
             margin-top: 5px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
         
-        .severity-critical { color: #ff6b6b; font-weight: bold; }
-        .severity-high { color: var(--vscode-errorForeground); }
-        .severity-medium { color: var(--vscode-warningForeground); }
-        .severity-low { color: var(--vscode-infoForeground); }
+        .severity-critical { 
+            color: #ff4343 !important; 
+            font-weight: bold; 
+            text-shadow: 0 0 3px rgba(255, 67, 67, 0.3);
+            position: relative;
+        }
+        
+        .severity-critical::before {
+            content: "🔥";
+            position: absolute;
+            top: -2px;
+            right: -20px;
+            font-size: 14px;
+            opacity: 0.6;
+        }
+        
+        .severity-high { 
+            color: #ff5722 !important; 
+            font-weight: bold;
+            position: relative;
+        }
+        
+        .severity-high::before {
+            content: "⚠️";
+            position: absolute;
+            top: -2px;
+            right: -20px;
+            font-size: 14px;
+            opacity: 0.6;
+        }
+        
+        .severity-medium { 
+            color: #ffc107 !important; 
+            font-weight: 600;
+            position: relative;
+        }
+        
+        .severity-medium::before {
+            content: "⚡";
+            position: absolute;
+            top: -2px;
+            right: -20px;
+            font-size: 14px;
+            opacity: 0.6;
+        }
+        
+        .severity-low { 
+            color: #2196f3 !important; 
+            font-weight: 500;
+            position: relative;
+        }
+        
+        .severity-low::before {
+            content: "ℹ️";
+            position: absolute;
+            top: -2px;
+            right: -20px;
+            font-size: 14px;
+            opacity: 0.6;
+        }
         
         .top-items {
-            margin-top: 15px;
+            margin-top: 20px;
         }
         
         .top-items h4 {
-            margin: 0 0 10px 0;
+            margin: 0 0 12px 0;
             font-size: 14px;
             color: var(--vscode-foreground);
+            font-weight: 600;
         }
         
         .top-list {
             list-style: none;
             padding: 0;
             margin: 0;
+            background-color: var(--vscode-input-background);
+            border-radius: 4px;
+            border: 1px solid var(--vscode-input-border);
+            overflow: hidden;
         }
         
         .top-list li {
             display: flex;
             justify-content: space-between;
-            padding: 5px 0;
+            align-items: center;
+            padding: 10px 12px;
             border-bottom: 1px solid var(--vscode-panel-border);
             font-size: 12px;
+            transition: background-color 0.15s ease;
+        }
+        
+        .top-list li:hover {
+            background-color: var(--vscode-list-hoverBackground);
         }
         
         .top-list li:last-child {
             border-bottom: none;
+        }
+        
+        .top-list li .count {
+            background-color: var(--vscode-badge-background);
+            color: var(--vscode-badge-foreground);
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            min-width: 20px;
+            text-align: center;
         }
         
         .no-results {
@@ -628,23 +790,23 @@ export class UiProvider implements vscode.WebviewViewProvider {
             <div class="summary-grid">
                 <div class="summary-card">
                     <div class="summary-number" id="totalAlerts">0</div>
-                    <div class="summary-label">Total Alerts</div>
+                    <div class="summary-label">📊 Total Alerts</div>
                 </div>
-                <div class="summary-card">
+                <div class="summary-card critical">
                     <div class="summary-number severity-critical" id="criticalAlerts">0</div>
-                    <div class="summary-label">Critical Severity</div>
+                    <div class="summary-label">🔥 Critical Severity</div>
                 </div>
-                <div class="summary-card">
+                <div class="summary-card high">
                     <div class="summary-number severity-high" id="highAlerts">0</div>
-                    <div class="summary-label">High Severity</div>
+                    <div class="summary-label">⚠️ High Severity</div>
                 </div>
-                <div class="summary-card">
+                <div class="summary-card medium">
                     <div class="summary-number severity-medium" id="mediumAlerts">0</div>
-                    <div class="summary-label">Medium Severity</div>
+                    <div class="summary-label">⚡ Medium Severity</div>
                 </div>
-                <div class="summary-card">
+                <div class="summary-card low">
                     <div class="summary-number severity-low" id="lowAlerts">0</div>
-                    <div class="summary-label">Low Severity</div>
+                    <div class="summary-label">ℹ️ Low Severity</div>
                 </div>
             </div>
 
@@ -882,7 +1044,7 @@ export class UiProvider implements vscode.WebviewViewProvider {
                 topRulesList.innerHTML = '';
                 summary.topRules.forEach(item => {
                     const li = document.createElement('li');
-                    li.innerHTML = '<span>' + item.rule + '</span><span>' + item.count + '</span>';
+                    li.innerHTML = '<span>' + item.rule + '</span><span class="count">' + item.count + '</span>';
                     topRulesList.appendChild(li);
                 });
                 
@@ -891,7 +1053,7 @@ export class UiProvider implements vscode.WebviewViewProvider {
                 topFilesList.innerHTML = '';
                 summary.topFiles.forEach(item => {
                     const li = document.createElement('li');
-                    li.innerHTML = '<span>' + item.file + '</span><span>' + item.count + '</span>';
+                    li.innerHTML = '<span>' + item.file + '</span><span class="count">' + item.count + '</span>';
                     topFilesList.appendChild(li);
                 });
                 

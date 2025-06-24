@@ -14,6 +14,7 @@ export interface ScanResult {
   ruleId: string;
   severity: string;
   message: string;
+  language?: string; // Optional language field
   location: {
     file: string;
     startLine: number;
@@ -129,6 +130,8 @@ export class CodeQLService {
         throw new Error("Operation cancelled");
       }
 
+      // await this.installPack(language);
+
       progress.report({
         increment: progressBase,
         message: `Creating ${language} database...`,
@@ -167,7 +170,7 @@ export class CodeQLService {
       });
 
       // Parse SARIF results
-      const languageResults = this.parseSARIFResults(sarif, workspaceFolder);
+      const languageResults = this.parseSARIFResults(sarif, workspaceFolder, language);
       results.push(...languageResults);
     }
 
@@ -692,6 +695,36 @@ export class CodeQLService {
     }
   }
 
+  private async installPack(name: string): Promise<void> {
+    const config = vscode.workspace.getConfiguration("codeql-scanner");
+    const codeqlPath = config.get<string>("codeqlPath", "codeql");
+
+    this.logger.info(
+      "CodeQLService",
+      `Installing CodeQL pack: ${name} using CLI at ${codeqlPath}`
+    );
+
+    try {
+      const command = `${codeqlPath} pack install ${name}`;
+      this.logger.info("CodeQLService", `Installing pack: ${name}`);
+
+      const { stdout, stderr } = await execAsync(command, {
+        timeout: 30000, // 30 seconds timeout
+      });
+      this.logger.logCodeQLCLI(command, "completed", stdout);
+      if (stderr) {
+        this.logger.warn("CodeQLService", "Pack installation warnings", stderr);
+      }
+    } catch (error) {
+      this.logger.error(
+        "CodeQLService",
+        `Failed to install pack ${name}`,
+        error
+      );
+      throw new Error(`Failed to install pack ${name}: ${error}`);
+    }
+  }
+
   private async createCodeQLDatabase(
     language: string,
     searchPaths: string[],
@@ -790,7 +823,7 @@ export class CodeQLService {
     }
   }
 
-  private parseSARIFResults(sarif: any, workspaceFolder: string): ScanResult[] {
+  private parseSARIFResults(sarif: any, workspaceFolder: string, language: string): ScanResult[] {
     const results: ScanResult[] = [];
 
     if (!sarif.runs || sarif.runs.length === 0) {
@@ -818,6 +851,7 @@ export class CodeQLService {
           ruleId: result.ruleId || "unknown",
           severity: this.mapSeverity(result.level),
           message: result.message?.text || "No message",
+          language: language,
           location: {
             file: filePath,
             startLine: region.startLine || 1,

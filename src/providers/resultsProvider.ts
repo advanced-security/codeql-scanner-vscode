@@ -28,20 +28,20 @@ export class ResultsProvider implements vscode.TreeDataProvider<ResultItem> {
 
     getChildren(element?: ResultItem): Thenable<ResultItem[]> {
         if (!element) {
-            // Root level - group by severity
-            const groups = this.groupBySeverity(this.results);
+            // Root level - group by language
+            const groups = this.groupByLanguage(this.results);
             return Promise.resolve(
-                Object.entries(groups).map(([severity, results]) => 
+                Object.entries(groups).map(([language, results]) => 
                     new ResultItem(
-                        `${severity.toUpperCase()} (${results.length})`,
+                        `${language.toUpperCase()} (${results.length})`,
                         vscode.TreeItemCollapsibleState.Expanded,
-                        'severity',
-                        severity,
+                        'language',
+                        language,
                         results
                     )
                 )
             );
-        } else if (element.type === 'severity') {
+        } else if (element.type === 'language') {
             // Second level - individual results
             return Promise.resolve(
                 element.results!.map(result => 
@@ -60,15 +60,15 @@ export class ResultsProvider implements vscode.TreeDataProvider<ResultItem> {
         return Promise.resolve([]);
     }
 
-    private groupBySeverity(results: ScanResult[]): { [severity: string]: ScanResult[] } {
+    private groupByLanguage(results: ScanResult[]): { [language: string]: ScanResult[] } {
         return results.reduce((groups, result) => {
-            const severity = result.severity || 'unknown';
-            if (!groups[severity]) {
-                groups[severity] = [];
+            const language = result.language || 'unknown';
+            if (!groups[language]) {
+                groups[language] = [];
             }
-            groups[severity].push(result);
+            groups[language].push(result);
             return groups;
-        }, {} as { [severity: string]: ScanResult[] });
+        }, {} as { [language: string]: ScanResult[] });
     }
 }
 
@@ -76,8 +76,8 @@ export class ResultItem extends vscode.TreeItem {
     constructor(
         public readonly label: string,
         public readonly collapsibleState: vscode.TreeItemCollapsibleState,
-        public readonly type: 'severity' | 'result',
-        public readonly severity?: string,
+        public readonly type: 'language' | 'result',
+        public readonly language?: string,
         public readonly results?: ScanResult[],
         public readonly result?: ScanResult
     ) {
@@ -91,8 +91,8 @@ export class ResultItem extends vscode.TreeItem {
     }
 
     private getTooltip(): string {
-        if (this.type === 'severity') {
-            return `${this.results?.length || 0} ${this.severity} severity issues`;
+        if (this.type === 'language') {
+            return `${this.results?.length || 0} ${this.language} language issues`;
         } else if (this.result) {
             return `${this.result.ruleId}: ${this.result.message}\\nFile: ${this.result.location.file}\\nLine: ${this.result.location.startLine}`;
         }
@@ -107,21 +107,20 @@ export class ResultItem extends vscode.TreeItem {
     }
 
     private getIcon(): vscode.ThemeIcon {
-        if (this.type === 'severity') {
-            switch (this.severity) {
-                case 'critical':
-                    return new vscode.ThemeIcon('error', new vscode.ThemeColor('errorForeground'));
-                case 'error':
-                case 'high':
-                    return new vscode.ThemeIcon('error', new vscode.ThemeColor('errorForeground'));
-                case 'warning':
-                case 'medium':
-                    return new vscode.ThemeIcon('warning', new vscode.ThemeColor('warningForeground'));
-                case 'info':
-                case 'low':
-                    return new vscode.ThemeIcon('info', new vscode.ThemeColor('infoForeground'));
+        if (this.type === 'language') {
+            switch (this.language) {
+                case 'javascript':
+                    return new vscode.ThemeIcon('symbol-class', new vscode.ThemeColor('symbolIcon.classForeground'));
+                case 'python':
+                    return new vscode.ThemeIcon('symbol-function', new vscode.ThemeColor('symbolIcon.functionForeground'));
+                case 'java':
+                    return new vscode.ThemeIcon('symbol-interface', new vscode.ThemeColor('symbolIcon.interfaceForeground'));
+                case 'csharp':
+                    return new vscode.ThemeIcon('symbol-namespace', new vscode.ThemeColor('symbolIcon.namespaceForeground'));
+                case 'cpp':
+                    return new vscode.ThemeIcon('symbol-struct', new vscode.ThemeColor('symbolIcon.structForeground'));
                 default:
-                    return new vscode.ThemeIcon('circle-outline');
+                    return new vscode.ThemeIcon('file-code');
             }
         } else if (this.type === 'result') {
             switch (this.result?.severity) {
