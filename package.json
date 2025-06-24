@@ -53,6 +53,16 @@
         "command": "codeql-scanner.configure",
         "title": "CodeQL: Configure Settings",
         "category": "CodeQL Scanner"
+      },
+      {
+        "command": "codeql-scanner.showLogs",
+        "title": "CodeQL: Show Logs",
+        "category": "CodeQL Scanner"
+      },
+      {
+        "command": "codeql-scanner.clearLogs",
+        "title": "CodeQL: Clear Logs",
+        "category": "CodeQL Scanner"
       }
     ],
     "configuration": {
@@ -75,6 +85,16 @@
           "default": "",
           "description": "GitHub repository name",
           "scope": "resource"
+        },
+        "codeql-scanner.github.baseUrl": {
+          "type": "string",
+          "default": "https://api.github.com",
+          "description": "GitHub API base URL (for GitHub Enterprise Server support)",
+          "scope": "application",
+          "examples": [
+            "https://api.github.com",
+            "https://your-github-enterprise.com/api/v3"
+          ]
         },
         "codeql-scanner.searchPaths": {
           "type": "array",
@@ -130,6 +150,24 @@
           "default": true,
           "description": "Use local CodeQL CLI for scanning instead of GitHub Actions",
           "scope": "resource"
+        },
+        "codeql-scanner.logging.level": {
+          "type": "string",
+          "enum": [
+            "DEBUG",
+            "INFO",
+            "WARN",
+            "ERROR"
+          ],
+          "default": "INFO",
+          "description": "Logging level for CodeQL Scanner output",
+          "scope": "application"
+        },
+        "codeql-scanner.logging.enableConsole": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable logging to the developer console (for debugging)",
+          "scope": "application"
         }
       }
     },
@@ -149,6 +187,14 @@
         },
         {
           "command": "codeql-scanner.configure",
+          "when": "workspaceContainsCodeqlConfig || true"
+        },
+        {
+          "command": "codeql-scanner.showLogs",
+          "when": "workspaceContainsCodeqlConfig || true"
+        },
+        {
+          "command": "codeql-scanner.clearLogs",
           "when": "workspaceContainsCodeqlConfig || true"
         }
       ],
