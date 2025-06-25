@@ -117,6 +117,11 @@ export class UiProvider implements vscode.WebviewViewProvider {
           config.codeqlPath,
           vscode.ConfigurationTarget.Global
         ),
+        workspaceConfig.update(
+          "threatModel",
+          config.threatModel,
+          vscode.ConfigurationTarget.Workspace
+        ),
       ]);
 
       this.logger.logServiceCall(
@@ -156,16 +161,30 @@ export class UiProvider implements vscode.WebviewViewProvider {
   private async loadConfiguration() {
     const config = vscode.workspace.getConfiguration("codeql-scanner");
 
+    // Check if threatModel is set, if not automatically set it to "Remote"
+    let threatModel = config.get<string>("threatModel");
+    if (!threatModel) {
+      threatModel = "Remote";
+      // Automatically save the default threat model to configuration
+      await config.update(
+        "threatModel",
+        threatModel,
+        vscode.ConfigurationTarget.Workspace
+      );
+      this.logger.info(
+        "UiProvider",
+        "Automatically set threat model to 'Remote' as default"
+      );
+    }
+
     const configuration = {
       githubToken: config.get<string>("github.token", ""),
       githubOwner: config.get<string>("github.owner", ""),
       githubRepo: config.get<string>("github.repo", ""),
-      suites: config.get<string[]>("suites", [
-        "security-extended",
-        "security-and-quality",
-      ]),
+      suites: config.get<string[]>("suites", ["code-scanning"]),
       languages: config.get<string[]>("languages", []),
       codeqlPath: config.get<string>("codeqlPath", "codeql"),
+      threatModel: threatModel,
     };
 
     this._view?.webview.postMessage({
@@ -1048,7 +1067,17 @@ export class UiProvider implements vscode.WebviewViewProvider {
         }
 
         .suite-radio input[type="radio"]:checked + label .suite-name {
-            color: var(--vscode-focusBorder);
+            color: #28a745;
+        }
+
+        .suite-radio:has(input[type="radio"]:checked) {
+            background-color: rgba(40, 167, 69, 0.1);
+            border-color: #28a745;
+        }
+
+        .suite-radio:has(input[type="radio"]:checked):hover {
+            background-color: rgba(40, 167, 69, 0.15);
+            border-color: #28a745;
         }
     </style>
 </head>
@@ -1146,6 +1175,27 @@ export class UiProvider implements vscode.WebviewViewProvider {
             </div>
             <div class="help-text">Select the CodeQL query suite to run during analysis</div>
         </div>
+        
+        <div class="form-group">
+            <label for="threatModel">Threat Model:</label>
+            <div id="threatModelContainer">
+                <div class="suite-radio">
+                    <input type="radio" id="threat-remote" name="threatModel" value="Remote">
+                    <label for="threat-remote">
+                        <span class="suite-name">Remote</span>
+                        <span class="suite-description">Analyze threats from external attackers and remote code execution</span>
+                    </label>
+                </div>
+                <div class="suite-radio">
+                    <input type="radio" id="threat-local" name="threatModel" value="Local">
+                    <label for="threat-local">
+                        <span class="suite-name">Local</span>
+                        <span class="suite-description">Focus on local threats and privilege escalation scenarios</span>
+                    </label>
+                </div>
+            </div>
+            <div class="help-text">Select the threat model to focus the analysis on specific security scenarios</div>
+        </div>
     </div>
     <div class="section">
         <h3>Langauge Selection</h3>
@@ -1178,7 +1228,8 @@ export class UiProvider implements vscode.WebviewViewProvider {
                 githubRepo: document.getElementById('githubRepo').value,
                 suites: [getSelectedSuite()],
                 languages: getSelectedLanguages(),
-                codeqlPath: document.getElementById('codeqlPath').value
+                codeqlPath: document.getElementById('codeqlPath').value,
+                threatModel: getSelectedThreatModel()
             };
             
             vscode.postMessage({
@@ -1198,7 +1249,23 @@ export class UiProvider implements vscode.WebviewViewProvider {
                 radioButton.checked = true;
             } else {
                 // Default to code-scanning if suite not found
-                const defaultRadio = document.querySelector('input[name="suite"][value="code-scanningd"]');
+                const defaultRadio = document.querySelector('input[name="suite"][value="code-scanning"]');
+                if (defaultRadio) defaultRadio.checked = true;
+            }
+        }
+
+        function getSelectedThreatModel() {
+            const selectedRadio = document.querySelector('input[name="threatModel"]:checked');
+            return selectedRadio ? selectedRadio.value : 'Remote';
+        }
+
+        function setSelectedThreatModel(threatModel) {
+            const radioButton = document.querySelector('input[name="threatModel"][value="' + threatModel + '"]');
+            if (radioButton) {
+                radioButton.checked = true;
+            } else {
+                // Default to Remote if threat model not found
+                const defaultRadio = document.querySelector('input[name="threatModel"][value="Remote"]');
                 if (defaultRadio) defaultRadio.checked = true;
             }
         }
@@ -1432,11 +1499,15 @@ export class UiProvider implements vscode.WebviewViewProvider {
                     document.getElementById('githubOwner').value = config.githubOwner || '';
                     document.getElementById('githubRepo').value = config.githubRepo || '';
                     
-                    // Set selected suite (take first suite if multiple, default to security-extended)
-                    const selectedSuite = config.suites && config.suites.length > 0 ? config.suites[0] : 'security-extended';
+                    // Set selected suite (take first suite if multiple, default to code-scanning)
+                    const selectedSuite = config.suites && config.suites.length > 0 ? config.suites[0] : 'code-scanning';
                     setSelectedSuite(selectedSuite);
                     
                     document.getElementById('codeqlPath').value = config.codeqlPath || 'codeql';
+                    
+                    // Set selected threat model (default to Remote)
+                    const selectedThreatModel = config.threatModel || 'Remote';
+                    setSelectedThreatModel(selectedThreatModel);
                     
                     // Set selected languages if available
                     if (config.languages && config.languages.length > 0) {
@@ -1517,6 +1588,21 @@ export class UiProvider implements vscode.WebviewViewProvider {
         
         // Load configuration on startup
         loadConfig();
+        
+        // Initialize defaults if nothing is selected
+        setTimeout(() => {
+            // Ensure a suite is always selected
+            if (!document.querySelector('input[name="suite"]:checked')) {
+                const defaultSuite = document.querySelector('input[name="suite"][value="code-scanning"]');
+                if (defaultSuite) defaultSuite.checked = true;
+            }
+            
+            // Ensure a threat model is always selected
+            if (!document.querySelector('input[name="threatModel"]:checked')) {
+                const defaultThreatModel = document.querySelector('input[name="threatModel"][value="Remote"]');
+                if (defaultThreatModel) defaultThreatModel.checked = true;
+            }
+        }, 100);
         
         // Load alerts summary
         vscode.postMessage({ command: 'loadAlertsSummary' });

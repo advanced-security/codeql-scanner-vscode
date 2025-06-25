@@ -784,6 +784,7 @@ export class CodeQLService {
     const config = vscode.workspace.getConfiguration("codeql-scanner");
     const codeqlPath = config.get<string>("codeqlPath", "codeql");
     const suite = config.get<string>("suite", "code-scanning");
+    const threatModel = config.get<string>("threatModel", "Remote").toLowerCase();
 
     const outputPath = path.join(
       codeqlDir,
@@ -801,7 +802,11 @@ export class CodeQLService {
       queries += `:codeql-suites/${language}-code-scanning.qls`;
     }
 
-    const command = `${codeqlPath} database analyze --output "${outputPath}" --format sarif-latest "${databasePath}" "${queries}"`;
+    var command = `${codeqlPath} database analyze --output "${outputPath}" --format sarif-latest`;
+    if (threatModel !== "remote") {
+      command += ` --threat-model ${threatModel}`;
+    }
+    command += ` "${databasePath}" "${queries}"`;
 
     try {
       progress.report({ message: "Running CodeQL analysis..." });
