@@ -81,11 +81,9 @@ export class UiProvider implements vscode.WebviewViewProvider {
                 workspaceConfig.update('github.token', config.githubToken, vscode.ConfigurationTarget.Global),
                 workspaceConfig.update('github.owner', config.githubOwner, vscode.ConfigurationTarget.Workspace),
                 workspaceConfig.update('github.repo', config.githubRepo, vscode.ConfigurationTarget.Workspace),
-                workspaceConfig.update('searchPaths', config.searchPaths, vscode.ConfigurationTarget.Workspace),
                 workspaceConfig.update('suites', config.suites, vscode.ConfigurationTarget.Workspace),
                 workspaceConfig.update('languages', config.languages, vscode.ConfigurationTarget.Workspace),
-                workspaceConfig.update('codeqlPath', config.codeqlPath, vscode.ConfigurationTarget.Global),
-                workspaceConfig.update('useLocalScan', config.useLocalScan, vscode.ConfigurationTarget.Workspace)
+                workspaceConfig.update('codeqlPath', config.codeqlPath, vscode.ConfigurationTarget.Global)
             ]);
 
             this.logger.logServiceCall('UiProvider', 'saveConfiguration', 'completed');
@@ -115,11 +113,9 @@ export class UiProvider implements vscode.WebviewViewProvider {
             githubToken: config.get<string>('github.token', ''),
             githubOwner: config.get<string>('github.owner', ''),
             githubRepo: config.get<string>('github.repo', ''),
-            searchPaths: config.get<string[]>('searchPaths', ['src/', 'lib/']),
             suites: config.get<string[]>('suites', ['security-extended', 'security-and-quality']),
             languages: config.get<string[]>('languages', []),
-            codeqlPath: config.get<string>('codeqlPath', 'codeql'),
-            useLocalScan: config.get<boolean>('useLocalScan', true)
+            codeqlPath: config.get<string>('codeqlPath', 'codeql')
         };
 
         this._view?.webview.postMessage({ 
@@ -860,14 +856,6 @@ export class UiProvider implements vscode.WebviewViewProvider {
         <h3>CodeQL CLI Configuration</h3>
         
         <div class="form-group">
-            <label for="useLocalScan">
-                <input type="checkbox" id="useLocalScan" style="width: auto; margin-right: 8px;">
-                Use Local CodeQL CLI
-            </label>
-            <div class="help-text">Use local CodeQL CLI instead of GitHub Actions for scanning</div>
-        </div>
-        
-        <div class="form-group">
             <label for="codeqlPath">CodeQL CLI Path:</label>
             <input type="text" id="codeqlPath" placeholder="codeql">
             <div class="help-text">Path to the CodeQL CLI executable (e.g., 'codeql' if in PATH, or full path)</div>
@@ -877,11 +865,6 @@ export class UiProvider implements vscode.WebviewViewProvider {
     <div class="section">
         <h3>Scan Configuration</h3>
         
-        <div class="form-group">
-            <label for="searchPaths">Search Paths:</label>
-            <textarea id="searchPaths" class="array-input" placeholder="src/&#10;lib/&#10;app/"></textarea>
-            <div class="help-text">One path per line. Paths to search for source code.</div>
-        </div>
         
         <div class="form-group">
             <label for="suites">Query Suites:</label>
@@ -909,11 +892,9 @@ export class UiProvider implements vscode.WebviewViewProvider {
                 githubToken: document.getElementById('githubToken').value,
                 githubOwner: document.getElementById('githubOwner').value,
                 githubRepo: document.getElementById('githubRepo').value,
-                searchPaths: document.getElementById('searchPaths').value.split('\\n').filter(p => p.trim()),
                 suites: document.getElementById('suites').value.split('\\n').filter(s => s.trim()),
                 languages: document.getElementById('languages').value.split('\\n').filter(l => l.trim()),
-                codeqlPath: document.getElementById('codeqlPath').value,
-                useLocalScan: document.getElementById('useLocalScan').checked
+                codeqlPath: document.getElementById('codeqlPath').value
             };
             
             vscode.postMessage({
@@ -1075,11 +1056,9 @@ export class UiProvider implements vscode.WebviewViewProvider {
                     document.getElementById('githubToken').value = config.githubToken || '';
                     document.getElementById('githubOwner').value = config.githubOwner || '';
                     document.getElementById('githubRepo').value = config.githubRepo || '';
-                    document.getElementById('searchPaths').value = config.searchPaths.join('\\n');
                     document.getElementById('suites').value = config.suites.join('\\n');
                     document.getElementById('languages').value = config.languages.join('\\n');
                     document.getElementById('codeqlPath').value = config.codeqlPath || 'codeql';
-                    document.getElementById('useLocalScan').checked = config.useLocalScan !== false;
                     break;
                     
                 case 'configSaved':
