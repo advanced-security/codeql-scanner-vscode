@@ -48,7 +48,7 @@ export class UiProvider implements vscode.WebviewViewProvider {
       (message) => {
         switch (message.command) {
           case "saveConfig":
-            this.saveConfiguration(message.config, message.isAutoSave);
+            this.saveConfiguration(message.config);
             break;
           case "loadConfig":
             this.loadConfiguration();
@@ -81,11 +81,16 @@ export class UiProvider implements vscode.WebviewViewProvider {
     this.loadSupportedLanguages();
   }
 
-  private async saveConfiguration(config: any, isAutoSave: boolean = false) {
+  private async saveConfiguration(config: any) {
     this.logger.logServiceCall("UiProvider", "saveConfiguration", "started");
     const workspaceConfig = vscode.workspace.getConfiguration("codeql-scanner");
 
     try {
+      this.logger.info(
+        "UiProvider",
+        `Saving configuration: ${JSON.stringify(config, null, 2)}`
+      );
+
       await Promise.all([
         workspaceConfig.update(
           "github.token",
@@ -138,15 +143,12 @@ export class UiProvider implements vscode.WebviewViewProvider {
         command: "configSaved",
         success: true,
         message: "Configuration saved successfully!",
-        isAutoSave: isAutoSave,
       });
 
-      // Only show VS Code notification for manual saves
-      if (!isAutoSave) {
-        vscode.window.showInformationMessage(
-          "CodeQL Scanner configuration saved!"
-        );
-      }
+      // Show VS Code notification for saves
+      vscode.window.showInformationMessage(
+        "CodeQL Scanner configuration saved!"
+      );
     } catch (error) {
       this.logger.logServiceCall(
         "UiProvider",
@@ -158,7 +160,6 @@ export class UiProvider implements vscode.WebviewViewProvider {
         command: "configSaved",
         success: false,
         message: `Failed to save configuration: ${error}`,
-        isAutoSave: isAutoSave,
       });
     }
   }
@@ -181,13 +182,29 @@ export class UiProvider implements vscode.WebviewViewProvider {
         "Automatically set threat model to 'Remote' as default"
       );
     }
+    this.logger.info(
+      "UiProvider",
+      `Using threat model: ${threatModel}`
+    )
+
+    // Auto-select GitHub repository languages if no manual selection exists
+    let languages = config.get<string[]>("languages", []);
+    if (languages.length === 0) {
+      languages = await this.autoSelectGitHubLanguages();
+    }
+
+    this.logger.info(
+      "UiProvider",
+      `GitHub languages auto-selected: [${languages.join(", ")}]`
+    );
 
     const configuration = {
       githubToken: config.get<string>("github.token", ""),
       githubOwner: config.get<string>("github.owner", ""),
       githubRepo: config.get<string>("github.repo", ""),
+      githubLanguages: config.get<string[]>("github.languages", []),
       suites: config.get<string[]>("suites", ["code-scanning"]),
-      languages: config.get<string[]>("languages", []),
+      languages: languages,
       codeqlPath: config.get<string>("codeqlPath", "codeql"),
       threatModel: threatModel,
     };
@@ -376,6 +393,113 @@ export class UiProvider implements vscode.WebviewViewProvider {
     } catch (error) {
       this.logger.warn("UiProvider", "Failed to auto-load languages", error);
       // Don't show error to user for auto-loading, just log it
+    }
+  }
+
+  private async autoSelectGitHubLanguages(): Promise<string[]> {
+    this.logger.logServiceCall(
+      "UiProvider",
+      "autoSelectGitHubLanguages",
+      "started"
+    );
+
+    try {
+      const config = vscode.workspace.getConfiguration("codeql-scanner");
+      const githubLanguages = config.get<string[]>("github.languages", []);
+
+      if (githubLanguages.length === 0) {
+        this.logger.debug(
+          "UiProvider",
+          "No GitHub repository languages found, skipping auto-selection"
+        );
+        return [];
+      }
+
+      // Check if CodeQL service is available
+      if (!this._codeqlService) {
+        this.logger.warn(
+          "UiProvider",
+          "CodeQL service not available for language mapping"
+        );
+        return [];
+      }
+
+      // Ensure we have the supported languages loaded
+      try {
+        await this._codeqlService.getSupportedLanguages();
+      } catch (error) {
+        this.logger.warn(
+          "UiProvider",
+          "Failed to load CodeQL supported languages for auto-selection",
+          error
+        );
+        return [];
+      }
+
+      // Map GitHub languages to CodeQL supported languages
+      const mappedLanguages = this._codeqlService.mapLanguagesToCodeQL(githubLanguages);
+
+      if (mappedLanguages.length > 0) {
+        // Save the auto-selected languages to configuration
+        await config.update(
+          "languages",
+          mappedLanguages,
+          vscode.ConfigurationTarget.Workspace
+        );
+
+        this.logger.info(
+          "UiProvider",
+          `Auto-selected CodeQL languages from GitHub repository: ${mappedLanguages.join(", ")} (from GitHub languages: ${githubLanguages.join(", ")})`
+        );
+
+        // Notify the user about the auto-selection
+        vscode.window.showInformationMessage(
+          `Auto-selected ${mappedLanguages.length} CodeQL language(s) from your repository: ${mappedLanguages.join(", ")}`
+        );
+
+        // Send auto-selection notification to webview
+        this._view?.webview.postMessage({
+          command: "languagesAutoSelected",
+          success: true,
+          languages: mappedLanguages,
+          githubLanguages: githubLanguages,
+          message: `Auto-selected ${mappedLanguages.length} language(s) from your repository`
+        });
+      } else {
+        this.logger.info(
+          "UiProvider",
+          `No CodeQL-supported languages found from GitHub repository languages: ${githubLanguages.join(", ")}`
+        );
+
+        // Notify about no compatible languages found
+        this._view?.webview.postMessage({
+          command: "languagesAutoSelected",
+          success: false,
+          languages: [],
+          githubLanguages: githubLanguages,
+          message: `No CodeQL-supported languages found in repository (detected: ${githubLanguages.join(", ")})`
+        });
+      }
+
+      this.logger.logServiceCall(
+        "UiProvider",
+        "autoSelectGitHubLanguages",
+        "completed",
+        { 
+          githubLanguages: githubLanguages,
+          mappedLanguages: mappedLanguages
+        }
+      );
+
+      return mappedLanguages;
+    } catch (error) {
+      this.logger.logServiceCall(
+        "UiProvider",
+        "autoSelectGitHubLanguages",
+        "failed",
+        error
+      );
+      return [];
     }
   }
 
@@ -1409,6 +1533,35 @@ export class UiProvider implements vscode.WebviewViewProvider {
             background: linear-gradient(90deg, #667eea, #764ba2);
         }
 
+        /* Auto-selected language highlight effect */
+        .language-checkbox.auto-selected {
+            background: linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(16, 185, 129, 0.2) 100%);
+            border-color: rgba(34, 197, 94, 0.8);
+            box-shadow: 0 0 25px rgba(34, 197, 94, 0.4);
+            animation: auto-selected-pulse 3s ease-in-out;
+        }
+
+        .language-checkbox.auto-selected::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, #22c55e, #10b981);
+        }
+
+        @keyframes auto-selected-pulse {
+            0%, 100% { 
+                box-shadow: 0 0 25px rgba(34, 197, 94, 0.4);
+                transform: scale(1);
+            }
+            50% { 
+                box-shadow: 0 0 35px rgba(34, 197, 94, 0.6);
+                transform: scale(1.02);
+            }
+        }
+
         /* Futuristic Toggle Switch */
         .language-toggle {
             position: relative;
@@ -1773,7 +1926,7 @@ export class UiProvider implements vscode.WebviewViewProvider {
     </div>
 
     <div class="section">
-        <h3>Scan Configuration</h3>
+        <h3>🔍 Scan Configuration</h3>
         <div class="form-group">
             <label for="suites">Query Suite:</label>
             <div id="suitesContainer">
@@ -1829,23 +1982,20 @@ export class UiProvider implements vscode.WebviewViewProvider {
         <div class="form-group">
             <label for="languages">Programming Languages:</label>
             <div id="languagesContainer">
+                <div id="languagesList" style="display: none;">
+                    <!-- Language checkboxes will be populated here -->
+                </div>
                 <div style="margin-bottom: 20px;">
                     <button onclick="loadSupportedLanguages()" id="loadLanguagesButton" type="button" class="action-button futuristic-load-btn" style="min-width: auto; padding: 12px 20px; font-size: 13px;">
                         <span class="load-icon">🔄</span>
                         <span>Load Available Languages</span>
                     </button>
                 </div>
-                <div id="languagesList" style="display: none;">
-                    <!-- Language checkboxes will be populated here -->
-                </div>
             </div>
             <div class="help-text">Select the programming languages to analyze. Languages are auto-detected from your CodeQL CLI installation.</div>
         </div>
     </div>
 
-    <button onclick="saveConfig()">Save Configuration</button>
-    <button onclick="loadConfig()">Reload Configuration</button>
-    
     <div id="message"></div>
     
     <!-- Auto-save indicator -->
@@ -1853,10 +2003,13 @@ export class UiProvider implements vscode.WebviewViewProvider {
         Configuration auto-saved
     </div>
 
+    <button onclick="saveConfig()">Save Configuration</button>
+    <button onclick="loadConfig()">Reload Configuration</button>
+
     <script>
         const vscode = acquireVsCodeApi();
         
-        function saveConfig(isAutoSave = false) {
+        function saveConfig() {
             const config = {
                 githubToken: document.getElementById('githubToken').value,
                 githubOwner: document.getElementById('githubOwner').value,
@@ -1869,14 +2022,8 @@ export class UiProvider implements vscode.WebviewViewProvider {
             
             vscode.postMessage({
                 command: 'saveConfig',
-                config: config,
-                isAutoSave: isAutoSave
+                config: config
             });
-            
-            // Show subtle feedback for auto-saves
-            if (isAutoSave) {
-                showAutoSaveIndicator();
-            }
         }
 
         function getSelectedSuite() {
@@ -1893,18 +2040,7 @@ export class UiProvider implements vscode.WebviewViewProvider {
                 const defaultRadio = document.querySelector('input[name="suite"][value="code-scanning"]');
                 if (defaultRadio) defaultRadio.checked = true;
             }
-            
-            // Ensure all suite radio buttons have auto-save listeners
-            const suiteRadios = document.querySelectorAll('input[name="suite"]');
-            suiteRadios.forEach(radio => {
-                if (!radio.hasAttribute('data-listener-attached')) {
-                    radio.addEventListener('change', function() {
-                        // Auto-save configuration when suite selection changes
-                        saveConfig(true);
-                    });
-                    radio.setAttribute('data-listener-attached', 'true');
-                }
-            });
+
         }
 
         function getSelectedThreatModel() {
@@ -1921,18 +2057,6 @@ export class UiProvider implements vscode.WebviewViewProvider {
                 const defaultRadio = document.querySelector('input[name="threatModel"][value="Remote"]');
                 if (defaultRadio) defaultRadio.checked = true;
             }
-            
-            // Ensure all threat model radio buttons have auto-save listeners
-            const threatModelRadios = document.querySelectorAll('input[name="threatModel"]');
-            threatModelRadios.forEach(radio => {
-                if (!radio.hasAttribute('data-listener-attached')) {
-                    radio.addEventListener('change', function() {
-                        // Auto-save configuration when threat model selection changes
-                        saveConfig(true);
-                    });
-                    radio.setAttribute('data-listener-attached', 'true');
-                }
-            });
         }
 
         function getSelectedLanguages() {
@@ -1954,21 +2078,6 @@ export class UiProvider implements vscode.WebviewViewProvider {
                     } else {
                         checkboxContainer.classList.remove('selected');
                     }
-                }
-                
-                // Ensure event listeners are attached for auto-save
-                if (!cb.hasAttribute('data-listener-attached')) {
-                    cb.addEventListener('change', function() {
-                        // Update visual state
-                        if (cb.checked) {
-                            checkboxContainer.classList.add('selected');
-                        } else {
-                            checkboxContainer.classList.remove('selected');
-                        }
-                        // Auto-save configuration when language selection changes
-                        saveConfig(true);
-                    });
-                    cb.setAttribute('data-listener-attached', 'true');
                 }
             });
         }
@@ -2022,14 +2131,15 @@ export class UiProvider implements vscode.WebviewViewProvider {
                 
                 // Add event listener for automatic configuration saving
                 checkbox.addEventListener('change', function() {
+                    // Auto-save configuration when language selection changes
+                    saveConfig();
+
                     // Update visual state
                     if (checkbox.checked) {
                         checkboxContainer.classList.add('selected');
                     } else {
                         checkboxContainer.classList.remove('selected');
                     }
-                    // Auto-save configuration when language selection changes
-                    saveConfig(true);
                 });
                 checkbox.setAttribute('data-listener-attached', 'true');
                 
@@ -2283,11 +2393,40 @@ export class UiProvider implements vscode.WebviewViewProvider {
                     }
                     break;
                     
-                case 'configSaved':
-                    // Only show full message for manual saves, auto-saves are handled separately
-                    if (!message.isAutoSave) {
-                        showMessage(message.message, !message.success);
+                case 'languagesAutoSelected':
+                    if (message.success && message.languages.length > 0) {
+                        // Show success message with animation
+                        showMessage('Auto-selected ' + message.languages.length + ' language(s): ' + message.languages.join(', '), false);
+                        
+                        // Update the language selection UI if languages are loaded
+                        setTimeout(() => {
+                            setSelectedLanguages(message.languages);
+                            
+                            // Add a subtle highlight effect to auto-selected languages
+                            message.languages.forEach(lang => {
+                                const checkbox = document.querySelector('#lang-' + lang);
+                                if (checkbox) {
+                                    const container = checkbox.closest('.language-checkbox');
+                                    if (container) {
+                                        container.classList.add('auto-selected');
+                                        // Remove the highlight after 3 seconds
+                                        setTimeout(() => {
+                                            container.classList.remove('auto-selected');
+                                        }, 3000);
+                                    }
+                                }
+                            });
+                        }, 500);
+                    } else {
+                        // Show info message about no compatible languages
+                        if (message.githubLanguages && message.githubLanguages.length > 0) {
+                            showMessage('Repository languages detected (' + message.githubLanguages.join(', ') + ') but none are CodeQL-compatible', false);
+                        }
                     }
+                    break;
+                    
+                case 'configSaved':
+                    showMessage(message.message, !message.success);
                     break;
                     
                 case 'connectionTest':
@@ -2431,7 +2570,7 @@ export class UiProvider implements vscode.WebviewViewProvider {
                 if (!radio.hasAttribute('data-listener-attached')) {
                     radio.addEventListener('change', function() {
                         // Auto-save configuration when suite selection changes
-                        saveConfig(true);
+                        saveConfig();
                     });
                     radio.setAttribute('data-listener-attached', 'true');
                 }
@@ -2442,23 +2581,9 @@ export class UiProvider implements vscode.WebviewViewProvider {
                 if (!radio.hasAttribute('data-listener-attached')) {
                     radio.addEventListener('change', function() {
                         // Auto-save configuration when threat model selection changes
-                        saveConfig(true);
+                        saveConfig();
                     });
                     radio.setAttribute('data-listener-attached', 'true');
-                }
-            });
-            
-            // Add auto-save event listeners to text input fields
-            const textInputs = ['githubToken', 'githubOwner', 'githubRepo', 'codeqlPath'];
-            textInputs.forEach(inputId => {
-                const inputElement = document.getElementById(inputId);
-                if (inputElement && !inputElement.hasAttribute('data-listener-attached')) {
-                    // Use 'input' event for real-time saving, or 'blur' for when user finishes editing
-                    inputElement.addEventListener('blur', function() {
-                        // Auto-save configuration when input field loses focus
-                        saveConfig(true);
-                    });
-                    inputElement.setAttribute('data-listener-attached', 'true');
                 }
             });
         }, 100);

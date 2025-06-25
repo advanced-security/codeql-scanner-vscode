@@ -28,8 +28,16 @@ export class CodeQLService {
   private githubService: GitHubService;
   private logger: LoggerService;
   private languages: { [key: string]: string[] } = {
-    javascript: ["javascript", "typescript"],
-    python: ["python"],
+    javascript: ["javascript", "typescript", "js", "ts", "jsx", "tsx"],
+    python: ["python", "py"],
+    java: ["java"],
+    csharp: ["csharp", "c#", "cs"],
+    cpp: ["cpp", "c++", "c", "cc", "cxx"],
+    go: ["go", "golang"],
+    ruby: ["ruby", "rb"],
+    swift: ["swift"],
+    kotlin: ["kotlin", "kt"],
+    scala: ["scala"],
   };
 
   constructor(githubService: GitHubService) {
@@ -339,24 +347,30 @@ export class CodeQLService {
    * @returns
    */
   public mapLanguagesToCodeQL(languages: string[]): string[] {
-    var results: string[] = [];
-    for (const language of languages) {
-      var lang = language.toLowerCase();
+    const results: string[] = [];
+    const addedLanguages = new Set<string>();
 
-      // Find the match in the languages map
-      if (this.languages[lang]) {
+    for (const language of languages) {
+      const lang = language.toLowerCase();
+
+      // Direct match with CodeQL language
+      if (this.languages[lang] && !addedLanguages.has(lang)) {
         results.push(lang);
+        addedLanguages.add(lang);
+        continue;
       }
 
-      // If its an alias
-      for (const key in this.languages) {
-        if (this.languages[key].includes(lang)) {
-          lang = key; // Use the key as the canonical language name
+      // Check if it's an alias for a CodeQL language
+      for (const [codeqlLang, aliases] of Object.entries(this.languages)) {
+        if (aliases.includes(lang) && !addedLanguages.has(codeqlLang)) {
+          results.push(codeqlLang);
+          addedLanguages.add(codeqlLang);
           break;
         }
       }
     }
-    return results;
+
+    return [...new Set(results)]; // Remove any duplicates just in case
   }
 
   public async runAnalysis(
