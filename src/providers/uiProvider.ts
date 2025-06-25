@@ -77,8 +77,8 @@ export class UiProvider implements vscode.WebviewViewProvider {
     // Load initial configuration
     this.loadConfiguration();
 
-    // Auto-load supported languages on startup
-    this.autoLoadLanguagesIfNeeded();
+    // Automatically load supported languages for the UI
+    this.loadSupportedLanguages();
   }
 
   private async saveConfiguration(config: any, isAutoSave: boolean = false) {
@@ -1355,42 +1355,275 @@ export class UiProvider implements vscode.WebviewViewProvider {
             gap: 8px;
         }
 
+        /* Futuristic Language Selection */
         .language-checkbox {
+            position: relative;
             display: flex;
             align-items: center;
-            margin-bottom: 8px;
-            padding: 8px;
-            border-radius: 4px;
-            transition: background-color 0.15s ease;
+            margin-bottom: 12px;
+            padding: 16px 20px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0.08) 100%);
+            border: 1px solid rgba(102, 126, 234, 0.2);
+            backdrop-filter: blur(10px);
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+            overflow: hidden;
+        }
+
+        .language-checkbox::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(102, 126, 234, 0.1), transparent);
+            transition: left 0.6s;
+        }
+
+        .language-checkbox:hover::before {
+            left: 100%;
         }
 
         .language-checkbox:hover {
-            background-color: var(--vscode-list-hoverBackground);
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, rgba(118, 75, 162, 0.12) 100%);
+            border-color: rgba(102, 126, 234, 0.5);
+            transform: translateY(-2px) scale(1.02);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.2);
+        }
+
+        .language-checkbox.selected {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(118, 75, 162, 0.15) 100%);
+            border-color: rgba(102, 126, 234, 0.8);
+            box-shadow: 0 0 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .language-checkbox.selected::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+        }
+
+        /* Futuristic Toggle Switch */
+        .language-toggle {
+            position: relative;
+            width: 56px;
+            height: 28px;
+            margin-right: 16px;
+            flex-shrink: 0;
         }
 
         .language-checkbox input[type="checkbox"] {
-            width: auto;
-            margin-right: 10px;
-            margin-bottom: 0;
+            position: absolute;
+            opacity: 0;
+            width: 0;
+            height: 0;
+            pointer-events: none;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(135deg, rgba(0, 0, 0, 0.3) 0%, rgba(0, 0, 0, 0.5) 100%);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 14px;
+            cursor: pointer;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow: hidden;
+        }
+
+        .toggle-slider::before {
+            content: '';
+            position: absolute;
+            height: 20px;
+            width: 20px;
+            left: 2px;
+            top: 2px;
+            background: linear-gradient(135deg, #ffffff 0%, #e0e0e0 100%);
+            border-radius: 50%;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .toggle-slider::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+            transition: left 0.6s;
+        }
+
+        .language-checkbox:hover .toggle-slider::after {
+            left: 100%;
+        }
+
+        input[type="checkbox"]:checked + .toggle-slider {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-color: rgba(102, 126, 234, 0.8);
+            box-shadow: 0 0 15px rgba(102, 126, 234, 0.5);
+        }
+
+        input[type="checkbox"]:checked + .toggle-slider::before {
+            transform: translateX(28px);
+            background: linear-gradient(135deg, #ffffff 0%, #f0f0f0 100%);
+            box-shadow: 0 3px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        /* Pulsing effect for active toggles */
+        input[type="checkbox"]:checked + .toggle-slider {
+            animation: toggle-pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes toggle-pulse {
+            0%, 100% { box-shadow: 0 0 15px rgba(102, 126, 234, 0.5); }
+            50% { box-shadow: 0 0 25px rgba(102, 126, 234, 0.8); }
         }
 
         .language-checkbox label {
             margin-bottom: 0;
-            font-weight: normal;
+            font-weight: 500;
             cursor: pointer;
             flex: 1;
             text-transform: capitalize;
+            font-size: 14px;
+            color: var(--vscode-foreground);
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .language-checkbox:hover label {
+            color: rgba(102, 126, 234, 1);
+        }
+
+        .language-checkbox.selected label {
+            color: rgba(102, 126, 234, 1);
+            font-weight: 600;
         }
 
         .language-icon {
-            width: 16px;
-            height: 16px;
-            margin-right: 8px;
-            border-radius: 2px;
-            display: inline-block;
-            font-size: 12px;
+            width: 24px;
+            height: 24px;
+            border-radius: 6px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: 700;
             text-align: center;
-            line-height: 16px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            flex-shrink: 0;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .language-icon::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: inherit;
+            opacity: 0.8;
+            transition: opacity 0.3s ease;
+        }
+
+        .language-checkbox:hover .language-icon::before {
+            opacity: 1;
+        }
+
+        .language-checkbox.selected .language-icon {
+            transform: scale(1.1);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Enhanced Load Languages Button */
+        .futuristic-load-btn {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.8) 0%, rgba(118, 75, 162, 0.8) 100%) !important;
+            border: 1px solid rgba(102, 126, 234, 0.5) !important;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .futuristic-load-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+            transition: left 0.5s;
+        }
+
+        .futuristic-load-btn:hover::before {
+            left: 100%;
+        }
+
+        .futuristic-load-btn:hover:not(:disabled) {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 1) 0%, rgba(118, 75, 162, 1) 100%) !important;
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4) !important;
+        }
+
+        .futuristic-load-btn:disabled {
+            background: linear-gradient(135deg, rgba(156, 163, 175, 0.6) 0%, rgba(107, 114, 128, 0.6) 100%) !important;
+        }
+
+        .load-icon {
+            transition: transform 0.3s ease;
+        }
+
+        .futuristic-load-btn:hover:not(:disabled) .load-icon {
+            transform: rotate(180deg);
+        }
+
+        /* Language Grid Layout */
+        #languagesList {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
+            padding: 20px 0;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            #languagesList {
+                grid-template-columns: 1fr;
+                gap: 12px;
+            }
+            
+            .language-checkbox {
+                padding: 14px 16px;
+            }
+            
+            .language-toggle {
+                width: 48px;
+                height: 24px;
+            }
+            
+            .toggle-slider::before {
+                height: 16px;
+                width: 16px;
+                left: 2px;
+                top: 2px;
+            }
+            
+            input[type="checkbox"]:checked + .toggle-slider::before {
+                transform: translateX(24px);
+            }
         }
 
         .language-javascript { background-color: #f7df1e; color: #000; }
@@ -1591,13 +1824,16 @@ export class UiProvider implements vscode.WebviewViewProvider {
             <div class="help-text">Select the threat model to focus the analysis on specific security scenarios</div>
         </div>
     </div>
-    <div class="section">
-        <h3>Langauge Selection</h3>
+    <div class="section scan-section">
+        <h3>🔤 Language Selection</h3>
         <div class="form-group">
             <label for="languages">Programming Languages:</label>
             <div id="languagesContainer">
-                <div style="margin-bottom: 10px;">
-                    <button onclick="loadSupportedLanguages()" id="loadLanguagesButton" type="button">🔄 Load Available Languages</button>
+                <div style="margin-bottom: 20px;">
+                    <button onclick="loadSupportedLanguages()" id="loadLanguagesButton" type="button" class="action-button futuristic-load-btn" style="min-width: auto; padding: 12px 20px; font-size: 13px;">
+                        <span class="load-icon">🔄</span>
+                        <span>Load Available Languages</span>
+                    </button>
                 </div>
                 <div id="languagesList" style="display: none;">
                     <!-- Language checkboxes will be populated here -->
@@ -1657,6 +1893,18 @@ export class UiProvider implements vscode.WebviewViewProvider {
                 const defaultRadio = document.querySelector('input[name="suite"][value="code-scanning"]');
                 if (defaultRadio) defaultRadio.checked = true;
             }
+            
+            // Ensure all suite radio buttons have auto-save listeners
+            const suiteRadios = document.querySelectorAll('input[name="suite"]');
+            suiteRadios.forEach(radio => {
+                if (!radio.hasAttribute('data-listener-attached')) {
+                    radio.addEventListener('change', function() {
+                        // Auto-save configuration when suite selection changes
+                        saveConfig(true);
+                    });
+                    radio.setAttribute('data-listener-attached', 'true');
+                }
+            });
         }
 
         function getSelectedThreatModel() {
@@ -1673,6 +1921,18 @@ export class UiProvider implements vscode.WebviewViewProvider {
                 const defaultRadio = document.querySelector('input[name="threatModel"][value="Remote"]');
                 if (defaultRadio) defaultRadio.checked = true;
             }
+            
+            // Ensure all threat model radio buttons have auto-save listeners
+            const threatModelRadios = document.querySelectorAll('input[name="threatModel"]');
+            threatModelRadios.forEach(radio => {
+                if (!radio.hasAttribute('data-listener-attached')) {
+                    radio.addEventListener('change', function() {
+                        // Auto-save configuration when threat model selection changes
+                        saveConfig(true);
+                    });
+                    radio.setAttribute('data-listener-attached', 'true');
+                }
+            });
         }
 
         function getSelectedLanguages() {
@@ -1683,11 +1943,28 @@ export class UiProvider implements vscode.WebviewViewProvider {
         function setSelectedLanguages(languages) {
             const checkboxes = document.querySelectorAll('#languagesList input[type="checkbox"]');
             checkboxes.forEach(cb => {
-                cb.checked = languages.includes(cb.value);
+                const isSelected = languages.includes(cb.value);
+                cb.checked = isSelected;
+                
+                // Update visual state for futuristic design
+                const checkboxContainer = cb.closest('.language-checkbox');
+                if (checkboxContainer) {
+                    if (isSelected) {
+                        checkboxContainer.classList.add('selected');
+                    } else {
+                        checkboxContainer.classList.remove('selected');
+                    }
+                }
                 
                 // Ensure event listeners are attached for auto-save
                 if (!cb.hasAttribute('data-listener-attached')) {
                     cb.addEventListener('change', function() {
+                        // Update visual state
+                        if (cb.checked) {
+                            checkboxContainer.classList.add('selected');
+                        } else {
+                            checkboxContainer.classList.remove('selected');
+                        }
                         // Auto-save configuration when language selection changes
                         saveConfig(true);
                     });
@@ -1698,8 +1975,12 @@ export class UiProvider implements vscode.WebviewViewProvider {
 
         function loadSupportedLanguages() {
             const button = document.getElementById('loadLanguagesButton');
+            const loadIcon = button.querySelector('.load-icon');
+            const loadText = button.querySelector('span:last-child');
+            
             button.disabled = true;
-            button.textContent = '⏳ Loading Languages...';
+            loadIcon.textContent = '⏳';
+            loadText.textContent = 'Loading Languages...';
             
             vscode.postMessage({ command: 'loadSupportedLanguages' });
         }
@@ -1707,11 +1988,14 @@ export class UiProvider implements vscode.WebviewViewProvider {
         function displaySupportedLanguages(languages) {
             const container = document.getElementById('languagesList');
             const button = document.getElementById('loadLanguagesButton');
+            const loadIcon = button.querySelector('.load-icon');
+            const loadText = button.querySelector('span:last-child');
             
             if (languages.length === 0) {
                 container.innerHTML = '<div style="color: var(--vscode-errorForeground); font-style: italic;">No languages found. Please check your CodeQL CLI installation.</div>';
                 container.style.display = 'block';
-                button.textContent = '🔄 Retry Loading Languages';
+                loadIcon.textContent = '🔄';
+                loadText.textContent = 'Retry Loading Languages';
                 button.disabled = false;
                 return;
             }
@@ -1721,13 +2005,29 @@ export class UiProvider implements vscode.WebviewViewProvider {
                 const checkboxContainer = document.createElement('div');
                 checkboxContainer.className = 'language-checkbox';
                 
+                // Create toggle structure
+                const toggleContainer = document.createElement('div');
+                toggleContainer.className = 'language-toggle';
+                
                 const checkbox = document.createElement('input');
                 checkbox.type = 'checkbox';
                 checkbox.id = 'lang-' + lang;
                 checkbox.value = lang;
                 
+                const toggleSlider = document.createElement('div');
+                toggleSlider.className = 'toggle-slider';
+                
+                toggleContainer.appendChild(checkbox);
+                toggleContainer.appendChild(toggleSlider);
+                
                 // Add event listener for automatic configuration saving
                 checkbox.addEventListener('change', function() {
+                    // Update visual state
+                    if (checkbox.checked) {
+                        checkboxContainer.classList.add('selected');
+                    } else {
+                        checkboxContainer.classList.remove('selected');
+                    }
                     // Auto-save configuration when language selection changes
                     saveConfig(true);
                 });
@@ -1739,16 +2039,23 @@ export class UiProvider implements vscode.WebviewViewProvider {
                 
                 const label = document.createElement('label');
                 label.htmlFor = 'lang-' + lang;
-                label.textContent = lang;
+                label.innerHTML = icon.outerHTML + '<span>' + lang + '</span>';
                 
-                checkboxContainer.appendChild(checkbox);
-                checkboxContainer.appendChild(icon);
+                // Make the entire container clickable
+                checkboxContainer.addEventListener('click', function(e) {
+                    if (e.target !== checkbox) {
+                        checkbox.click();
+                    }
+                });
+                
+                checkboxContainer.appendChild(toggleContainer);
                 checkboxContainer.appendChild(label);
                 container.appendChild(checkboxContainer);
             });
             
             container.style.display = 'block';
-            button.textContent = '✅ Languages Loaded';
+            loadIcon.textContent = '✅';
+            loadText.textContent = 'Languages Loaded';
             button.disabled = false;
         }
 
@@ -1965,9 +2272,13 @@ export class UiProvider implements vscode.WebviewViewProvider {
                     } else {
                         const container = document.getElementById('languagesList');
                         const button = document.getElementById('loadLanguagesButton');
+                        const loadIcon = button.querySelector('.load-icon');
+                        const loadText = button.querySelector('span:last-child');
+                        
                         container.innerHTML = '<div style="color: var(--vscode-errorForeground); font-style: italic;">' + message.message + '</div>';
                         container.style.display = 'block';
-                        button.textContent = '🔄 Retry Loading Languages';
+                        loadIcon.textContent = '🔄';
+                        loadText.textContent = 'Retry Loading Languages';
                         button.disabled = false;
                     }
                     break;
@@ -2113,6 +2424,43 @@ export class UiProvider implements vscode.WebviewViewProvider {
                 const defaultThreatModel = document.querySelector('input[name="threatModel"][value="Remote"]');
                 if (defaultThreatModel) defaultThreatModel.checked = true;
             }
+            
+            // Add auto-save event listeners to all radio buttons
+            const suiteRadios = document.querySelectorAll('input[name="suite"]');
+            suiteRadios.forEach(radio => {
+                if (!radio.hasAttribute('data-listener-attached')) {
+                    radio.addEventListener('change', function() {
+                        // Auto-save configuration when suite selection changes
+                        saveConfig(true);
+                    });
+                    radio.setAttribute('data-listener-attached', 'true');
+                }
+            });
+            
+            const threatModelRadios = document.querySelectorAll('input[name="threatModel"]');
+            threatModelRadios.forEach(radio => {
+                if (!radio.hasAttribute('data-listener-attached')) {
+                    radio.addEventListener('change', function() {
+                        // Auto-save configuration when threat model selection changes
+                        saveConfig(true);
+                    });
+                    radio.setAttribute('data-listener-attached', 'true');
+                }
+            });
+            
+            // Add auto-save event listeners to text input fields
+            const textInputs = ['githubToken', 'githubOwner', 'githubRepo', 'codeqlPath'];
+            textInputs.forEach(inputId => {
+                const inputElement = document.getElementById(inputId);
+                if (inputElement && !inputElement.hasAttribute('data-listener-attached')) {
+                    // Use 'input' event for real-time saving, or 'blur' for when user finishes editing
+                    inputElement.addEventListener('blur', function() {
+                        // Auto-save configuration when input field loses focus
+                        saveConfig(true);
+                    });
+                    inputElement.setAttribute('data-listener-attached', 'true');
+                }
+            });
         }, 100);
         
         // Load alerts summary
