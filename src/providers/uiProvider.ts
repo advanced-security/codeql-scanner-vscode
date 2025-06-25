@@ -1,432 +1,622 @@
-import * as vscode from 'vscode';
-import * as path from 'path';
-import { ResultsProvider } from './resultsProvider';
-import { ScanResult } from '../services/codeqlService';
-import { GitHubService } from '../services/githubService';
-import { LoggerService } from '../services/loggerService';
+import * as vscode from "vscode";
+import * as path from "path";
+import { ResultsProvider } from "./resultsProvider";
+import { ScanResult, CodeQLService } from "../services/codeqlService";
+import { GitHubService } from "../services/githubService";
+import { LoggerService } from "../services/loggerService";
 
 export class UiProvider implements vscode.WebviewViewProvider {
-    public static readonly viewType = 'codeql-scanner.config';
+  public static readonly viewType = "codeql-scanner.config";
 
-    private _view?: vscode.WebviewView;
-    private _scanResults: ScanResult[] = [];
-    private _resultsProvider?: ResultsProvider;
-    private _githubService: GitHubService;
-    private logger: LoggerService;
-    private _scanStartTime?: number;
-    private _fetchStartTime?: number;
+  private _view?: vscode.WebviewView;
+  private _scanResults: ScanResult[] = [];
+  private _resultsProvider?: ResultsProvider;
+  private _githubService: GitHubService;
+  private _codeqlService?: CodeQLService;
+  private logger: LoggerService;
+  private _scanStartTime?: number;
+  private _fetchStartTime?: number;
 
-    constructor(private readonly _extensionContext: vscode.ExtensionContext) {
-        this._githubService = new GitHubService();
-        this.logger = LoggerService.getInstance();
+  constructor(private readonly _extensionContext: vscode.ExtensionContext) {
+    this._githubService = new GitHubService();
+    this.logger = LoggerService.getInstance();
+  }
+
+  public setResultsProvider(resultsProvider: ResultsProvider): void {
+    this._resultsProvider = resultsProvider;
+  }
+
+  public setCodeQLService(codeqlService: CodeQLService): void {
+    this._codeqlService = codeqlService;
+  }
+
+  public resolveWebviewView(
+    webviewView: vscode.WebviewView,
+    context: vscode.WebviewViewResolveContext,
+    _token: vscode.CancellationToken
+  ) {
+    this._view = webviewView;
+
+    webviewView.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [this._extensionContext.extensionUri],
+    };
+
+    webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
+
+    webviewView.webview.onDidReceiveMessage(
+      (message) => {
+        switch (message.command) {
+          case "saveConfig":
+            this.saveConfiguration(message.config);
+            break;
+          case "loadConfig":
+            this.loadConfiguration();
+            break;
+          case "testConnection":
+            this.testGitHubConnection();
+            break;
+          case "runLocalScan":
+            this.runLocalScan();
+            break;
+          case "loadAlertsSummary":
+            this.loadAlertsSummary();
+            break;
+          case "fetchRemoteAlerts":
+            this.fetchRemoteAlerts();
+            break;
+          case "loadSupportedLanguages":
+            this.loadSupportedLanguages();
+            break;
+        }
+      },
+      undefined,
+      this._extensionContext.subscriptions
+    );
+
+    // Load initial configuration
+    this.loadConfiguration();
+
+    // Auto-load supported languages on startup
+    this.autoLoadLanguagesIfNeeded();
+  }
+
+  private async saveConfiguration(config: any) {
+    this.logger.logServiceCall("UiProvider", "saveConfiguration", "started");
+    const workspaceConfig = vscode.workspace.getConfiguration("codeql-scanner");
+
+    try {
+      await Promise.all([
+        workspaceConfig.update(
+          "github.token",
+          config.githubToken,
+          vscode.ConfigurationTarget.Global
+        ),
+        workspaceConfig.update(
+          "github.owner",
+          config.githubOwner,
+          vscode.ConfigurationTarget.Workspace
+        ),
+        workspaceConfig.update(
+          "github.repo",
+          config.githubRepo,
+          vscode.ConfigurationTarget.Workspace
+        ),
+        workspaceConfig.update(
+          "suites",
+          config.suites,
+          vscode.ConfigurationTarget.Workspace
+        ),
+        workspaceConfig.update(
+          "languages",
+          config.languages,
+          vscode.ConfigurationTarget.Workspace
+        ),
+        workspaceConfig.update(
+          "codeqlPath",
+          config.codeqlPath,
+          vscode.ConfigurationTarget.Global
+        ),
+      ]);
+
+      this.logger.logServiceCall(
+        "UiProvider",
+        "saveConfiguration",
+        "completed"
+      );
+      this.logger.logConfiguration("UiProvider", {
+        ...config,
+        githubToken: "[REDACTED]",
+      });
+
+      this._view?.webview.postMessage({
+        command: "configSaved",
+        success: true,
+        message: "Configuration saved successfully!",
+      });
+
+      vscode.window.showInformationMessage(
+        "CodeQL Scanner configuration saved!"
+      );
+    } catch (error) {
+      this.logger.logServiceCall(
+        "UiProvider",
+        "saveConfiguration",
+        "failed",
+        error
+      );
+      this._view?.webview.postMessage({
+        command: "configSaved",
+        success: false,
+        message: `Failed to save configuration: ${error}`,
+      });
+    }
+  }
+
+  private async loadConfiguration() {
+    const config = vscode.workspace.getConfiguration("codeql-scanner");
+
+    const configuration = {
+      githubToken: config.get<string>("github.token", ""),
+      githubOwner: config.get<string>("github.owner", ""),
+      githubRepo: config.get<string>("github.repo", ""),
+      suites: config.get<string[]>("suites", [
+        "security-extended",
+        "security-and-quality",
+      ]),
+      languages: config.get<string[]>("languages", []),
+      codeqlPath: config.get<string>("codeqlPath", "codeql"),
+    };
+
+    this._view?.webview.postMessage({
+      command: "configLoaded",
+      config: configuration,
+    });
+  }
+
+  private async testGitHubConnection() {
+    this.logger.logServiceCall("UiProvider", "testGitHubConnection", "started");
+    const config = vscode.workspace.getConfiguration("codeql-scanner");
+    const token = config.get<string>("github.token");
+
+    if (!token) {
+      this.logger.warn(
+        "UiProvider",
+        "GitHub connection test failed: no token configured"
+      );
+      this._view?.webview.postMessage({
+        command: "connectionTest",
+        success: false,
+        message: "GitHub token is required",
+      });
+      return;
     }
 
-    public setResultsProvider(resultsProvider: ResultsProvider): void {
-        this._resultsProvider = resultsProvider;
+    try {
+      // Update the service with the current token
+      this._githubService.updateToken(token);
+
+      // Test the connection by getting repository info
+      await this._githubService.getRepositoryInfo();
+
+      this.logger.logServiceCall(
+        "UiProvider",
+        "testGitHubConnection",
+        "completed"
+      );
+      this._view?.webview.postMessage({
+        command: "connectionTest",
+        success: true,
+        message: "GitHub connection successful!",
+      });
+    } catch (error) {
+      this.logger.logServiceCall(
+        "UiProvider",
+        "testGitHubConnection",
+        "failed",
+        error
+      );
+      this._view?.webview.postMessage({
+        command: "connectionTest",
+        success: false,
+        message: `GitHub connection failed: ${error}`,
+      });
+    }
+  }
+
+  private async loadSupportedLanguages() {
+    this.logger.logServiceCall(
+      "UiProvider",
+      "loadSupportedLanguages",
+      "started"
+    );
+
+    if (!this._codeqlService) {
+      this.logger.warn(
+        "UiProvider",
+        "CodeQL service not available for loading supported languages"
+      );
+      this._view?.webview.postMessage({
+        command: "supportedLanguagesLoaded",
+        success: false,
+        languages: [],
+        message: "CodeQL service not available",
+      });
+      return;
     }
 
-    public resolveWebviewView(
-        webviewView: vscode.WebviewView,
-        context: vscode.WebviewViewResolveContext,
-        _token: vscode.CancellationToken,
-    ) {
-        this._view = webviewView;
+    try {
+      await this._codeqlService.getSupportedLanguages();
+      let supportedLanguages = this._codeqlService.getLanguages();
+      // Filter out unwanted languages
+      const excluded = ["html", "xml", "yaml", "csv", "properties"];
+      supportedLanguages = supportedLanguages.filter(
+        (lang) => !excluded.includes(lang.toLowerCase())
+      );
 
-        webviewView.webview.options = {
-            enableScripts: true,
-            localResourceRoots: [
-                this._extensionContext.extensionUri
-            ]
-        };
+      this.logger.logServiceCall(
+        "UiProvider",
+        "loadSupportedLanguages",
+        "completed",
+        { languageCount: supportedLanguages.length }
+      );
 
-        webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
+      this._view?.webview.postMessage({
+        command: "supportedLanguagesLoaded",
+        success: true,
+        languages: supportedLanguages,
+        message: `Found ${supportedLanguages.length} supported languages`,
+      });
+    } catch (error) {
+      this.logger.logServiceCall(
+        "UiProvider",
+        "loadSupportedLanguages",
+        "failed",
+        error
+      );
+      this._view?.webview.postMessage({
+        command: "supportedLanguagesLoaded",
+        success: false,
+        languages: [],
+        message: `Failed to load supported languages: ${error}`,
+      });
+    }
+  }
 
-        webviewView.webview.onDidReceiveMessage(
-            message => {
-                switch (message.command) {
-                  case "saveConfig":
-                    this.saveConfiguration(message.config);
-                    break;
-                  case "loadConfig":
-                    this.loadConfiguration();
-                    break;
-                  case "testConnection":
-                    this.testGitHubConnection();
-                    break;
-                  case "runLocalScan":
-                    this.runLocalScan();
-                    break;
-                  case "loadAlertsSummary":
-                    this.loadAlertsSummary();
-                    break;
-                  case "fetchRemoteAlerts":
-                    this.fetchRemoteAlerts();
-                    break;
-                }
-            },
-            undefined,
-            this._extensionContext.subscriptions
+  private async autoLoadLanguagesIfNeeded() {
+    this.logger.logServiceCall(
+      "UiProvider",
+      "autoLoadLanguagesIfNeeded",
+      "started"
+    );
+
+    try {
+      // Check if languages are already configured
+      const config = vscode.workspace.getConfiguration("codeql-scanner");
+      const configuredLanguages = config.get<string[]>("languages", []);
+
+      if (configuredLanguages.length > 0) {
+        this.logger.debug(
+          "UiProvider",
+          `Languages already configured: ${configuredLanguages.join(", ")}`
+        );
+        return;
+      }
+
+      // If no CodeQL service is available, can't auto-load
+      if (!this._codeqlService) {
+        this.logger.debug(
+          "UiProvider",
+          "CodeQL service not available for auto-loading languages"
+        );
+        return;
+      }
+
+      this.logger.info(
+        "UiProvider",
+        "No languages configured, attempting to auto-load supported languages"
+      );
+
+      // Try to get supported languages from CodeQL CLI
+      await this._codeqlService.getSupportedLanguages();
+      const supportedLanguages = this._codeqlService.getLanguages();
+
+      if (supportedLanguages.length > 0) {
+        this.logger.info(
+          "UiProvider",
+          `Auto-loaded ${
+            supportedLanguages.length
+          } supported languages: ${supportedLanguages.join(", ")}`
         );
 
-        // Load initial configuration
-        this.loadConfiguration();
-    }
-
-    private async saveConfiguration(config: any) {
-        this.logger.logServiceCall('UiProvider', 'saveConfiguration', 'started');
-        const workspaceConfig = vscode.workspace.getConfiguration('codeql-scanner');
-        
-        try {
-            await Promise.all([
-                workspaceConfig.update('github.token', config.githubToken, vscode.ConfigurationTarget.Global),
-                workspaceConfig.update('github.owner', config.githubOwner, vscode.ConfigurationTarget.Workspace),
-                workspaceConfig.update('github.repo', config.githubRepo, vscode.ConfigurationTarget.Workspace),
-                workspaceConfig.update('suites', config.suites, vscode.ConfigurationTarget.Workspace),
-                workspaceConfig.update('languages', config.languages, vscode.ConfigurationTarget.Workspace),
-                workspaceConfig.update('codeqlPath', config.codeqlPath, vscode.ConfigurationTarget.Global)
-            ]);
-
-            this.logger.logServiceCall('UiProvider', 'saveConfiguration', 'completed');
-            this.logger.logConfiguration('UiProvider', { ...config, githubToken: '[REDACTED]' });
-
-            this._view?.webview.postMessage({ 
-                command: 'configSaved',
-                success: true,
-                message: 'Configuration saved successfully!'
-            });
-
-            vscode.window.showInformationMessage('CodeQL Scanner configuration saved!');
-        } catch (error) {
-            this.logger.logServiceCall('UiProvider', 'saveConfiguration', 'failed', error);
-            this._view?.webview.postMessage({ 
-                command: 'configSaved',
-                success: false,
-                message: `Failed to save configuration: ${error}`
-            });
-        }
-    }
-
-    private async loadConfiguration() {
-        const config = vscode.workspace.getConfiguration('codeql-scanner');
-        
-        const configuration = {
-            githubToken: config.get<string>('github.token', ''),
-            githubOwner: config.get<string>('github.owner', ''),
-            githubRepo: config.get<string>('github.repo', ''),
-            suites: config.get<string[]>('suites', ['security-extended', 'security-and-quality']),
-            languages: config.get<string[]>('languages', []),
-            codeqlPath: config.get<string>('codeqlPath', 'codeql')
-        };
-
-        this._view?.webview.postMessage({ 
-            command: 'configLoaded',
-            config: configuration
-        });
-    }
-
-    private async testGitHubConnection() {
-        this.logger.logServiceCall('UiProvider', 'testGitHubConnection', 'started');
-        const config = vscode.workspace.getConfiguration('codeql-scanner');
-        const token = config.get<string>('github.token');
-        
-        if (!token) {
-            this.logger.warn('UiProvider', 'GitHub connection test failed: no token configured');
-            this._view?.webview.postMessage({ 
-                command: 'connectionTest',
-                success: false,
-                message: 'GitHub token is required'
-            });
-            return;
-        }
-
-        try {
-            // Update the service with the current token
-            this._githubService.updateToken(token);
-            
-            // Test the connection by getting repository info
-            await this._githubService.getRepositoryInfo();
-            
-            this.logger.logServiceCall('UiProvider', 'testGitHubConnection', 'completed');
-            this._view?.webview.postMessage({ 
-                command: 'connectionTest',
-                success: true,
-                message: 'GitHub connection successful!'
-            });
-        } catch (error) {
-            this.logger.logServiceCall('UiProvider', 'testGitHubConnection', 'failed', error);
-            this._view?.webview.postMessage({ 
-                command: 'connectionTest',
-                success: false,
-                message: `GitHub connection failed: ${error}`
-            });
-        }
-    }
-
-    private async runLocalScan() {
-        try {
-            this._scanStartTime = Date.now();
-            
-            this._view?.webview.postMessage({ 
-                command: 'scanStarted',
-                success: true,
-                message: 'Starting local CodeQL scan...'
-            });
-
-            // Trigger the scan command
-            await vscode.commands.executeCommand('codeql-scanner.scan');
-            
-            const scanDuration = this._scanStartTime ? Date.now() - this._scanStartTime : 0;
-            const durationText = this.formatDuration(scanDuration);
-            
-            this._view?.webview.postMessage({ 
-                command: 'scanCompleted',
-                success: true,
-                message: `CodeQL scan completed successfully in ${durationText}!`,
-                duration: scanDuration
-            });
-        } catch (error) {
-            const scanDuration = this._scanStartTime ? Date.now() - this._scanStartTime : 0;
-            const durationText = this.formatDuration(scanDuration);
-            
-            this._view?.webview.postMessage({ 
-                command: 'scanCompleted',
-                success: false,
-                message: `CodeQL scan failed after ${durationText}: ${error}`,
-                duration: scanDuration
-            });
-        }
-    }
-
-    private async fetchRemoteAlerts() {
-        try {
-            this._fetchStartTime = Date.now();
-            
-            this._view?.webview.postMessage({ 
-                command: 'fetchStarted',
-                success: true,
-                message: 'Fetching remote security alerts...'
-            });
-
-            const config = vscode.workspace.getConfiguration('codeql-scanner');
-            const token = config.get<string>('github.token');
-            const owner = config.get<string>('github.owner');
-            const repo = config.get<string>('github.repo');
-
-            if (!token || !owner || !repo) {
-                throw new Error('GitHub configuration is incomplete. Please configure token, owner, and repo.');
-            }
-
-            // Update the service with the current token
-            this._githubService.updateToken(token);
-
-            // Use GitHubService to fetch CodeQL alerts
-            const codeqlAlerts = await this._githubService.getCodeQLAlerts(owner, repo);
-
-            // Convert GitHub alerts to our ScanResult format
-            const scanResults = codeqlAlerts.map((alert: any) => ({
-                ruleId: alert.rule?.id || 'unknown',
-                severity: this.mapGitHubSeverityToLocal(alert.rule?.severity),
-                message: alert.message?.text || alert.rule?.description || 'No description',
-                language: this.detectLanguageFromFile(alert.most_recent_instance?.location?.path || 'unknown'),
-                location: {
-                    file: alert.most_recent_instance?.location?.path || 'unknown',
-                    startLine: alert.most_recent_instance?.location?.start_line || 1,
-                    startColumn: alert.most_recent_instance?.location?.start_column || 1,
-                    endLine: alert.most_recent_instance?.location?.end_line || 1,
-                    endColumn: alert.most_recent_instance?.location?.end_column || 1
-                }
-            }));
-
-            // Update the scan results and refresh summary
-            this.updateScanResults(scanResults);
-            
-            // Also update the results provider if available
-            if (this._resultsProvider) {
-                this._resultsProvider.setResults(scanResults);
-                vscode.commands.executeCommand('setContext', 'codeql-scanner.hasResults', scanResults.length > 0);
-            }
-
-            const fetchDuration = this._fetchStartTime ? Date.now() - this._fetchStartTime : 0;
-            const durationText = this.formatDuration(fetchDuration);
-
-            this._view?.webview.postMessage({ 
-                command: 'fetchCompleted',
-                success: true,
-                message: `Fetched ${scanResults.length} CodeQL security alerts from GitHub in ${durationText}`,
-                duration: fetchDuration
-            });
-
-        } catch (error) {
-            const fetchDuration = this._fetchStartTime ? Date.now() - this._fetchStartTime : 0;
-            const durationText = this.formatDuration(fetchDuration);
-            
-            this._view?.webview.postMessage({ 
-                command: 'fetchCompleted',
-                success: false,
-                message: `Failed to fetch remote alerts after ${durationText}: ${error}`,
-                duration: fetchDuration
-            });
-        }
-    }
-
-    private mapGitHubSeverityToLocal(severity?: string): string {
-        if (!severity) return 'medium';
-        
-        switch (severity.toLowerCase()) {
-            case 'critical':
-                return 'critical';
-            case 'high':
-                return 'high';
-            case 'medium':
-            case 'moderate':
-                return 'medium';
-            case 'low':
-            case 'note':
-            case 'info':
-                return 'low';
-            default:
-                return 'medium';
-        }
-    }
-
-    public updateScanResults(results: ScanResult[]): void {
-        this._scanResults = results;
-        this.loadAlertsSummary();
-    }
-
-    private async loadAlertsSummary() {
-        // If no scan results are stored locally, try to get them from results provider
-        let resultsToUse = this._scanResults;
-        if (resultsToUse.length === 0 && this._resultsProvider) {
-            try {
-                resultsToUse = this._resultsProvider.getResults();
-            } catch (error) {
-                this.logger.debug('UiProvider', 'No previous scan results available');
-                resultsToUse = [];
-            }
-        }
-        
-        const summary = this.generateAlertsSummary(resultsToUse);
-        
-        this._view?.webview.postMessage({ 
-            command: 'alertsSummaryLoaded',
-            summary: summary
-        });
-    }
-
-    private generateAlertsSummary(results: ScanResult[]): any {
-        if (!results || results.length === 0) {
-            return {
-                total: 0,
-                severityBreakdown: { critical: 0, high: 0, medium: 0, low: 0 },
-                topRules: [],
-                topFiles: [],
-                scanDate: null
-            };
-        }
-
-        // Group by severity
-        const severityBreakdown: { [key: string]: number } = { critical: 0, high: 0, medium: 0, low: 0 };
-        results.forEach(result => {
-            const severity = result.severity || 'medium';
-            if (severityBreakdown[severity] !== undefined) {
-                severityBreakdown[severity]++;
-            } else {
-                severityBreakdown[severity] = 1;
-            }
+        // Send the languages to the webview for display
+        this._view?.webview.postMessage({
+          command: "supportedLanguagesLoaded",
+          success: true,
+          languages: supportedLanguages,
+          message: `Auto-loaded ${supportedLanguages.length} supported languages`,
         });
 
-        // Get top rules
-        const ruleCount: { [key: string]: number } = {};
-        results.forEach(result => {
-            const ruleId = result.ruleId || 'unknown';
-            ruleCount[ruleId] = (ruleCount[ruleId] || 0) + 1;
-        });
+        this.logger.logServiceCall(
+          "UiProvider",
+          "autoLoadLanguagesIfNeeded",
+          "completed",
+          { languageCount: supportedLanguages.length }
+        );
+      } else {
+        this.logger.warn(
+          "UiProvider",
+          "No supported languages found during auto-load"
+        );
+      }
+    } catch (error) {
+      this.logger.warn("UiProvider", "Failed to auto-load languages", error);
+      // Don't show error to user for auto-loading, just log it
+    }
+  }
 
-        const topRules = Object.entries(ruleCount)
-            .sort(([, a], [, b]) => (b as number) - (a as number))
-            .slice(0, 5)
-            .map(([rule, count]) => ({ rule, count }));
+  private async runLocalScan() {
+    try {
+      this._scanStartTime = Date.now();
 
-        // Get top files
-        const fileCount: { [key: string]: number } = {};
-        results.forEach(result => {
-            const fileName = result.location?.file ? 
-                result.location.file.split('/').pop() || 'unknown' : 'unknown';
-            fileCount[fileName] = (fileCount[fileName] || 0) + 1;
-        });
+      this._view?.webview.postMessage({
+        command: "scanStarted",
+        success: true,
+        message: "Starting local CodeQL scan...",
+      });
 
-        const topFiles = Object.entries(fileCount)
-            .sort(([, a], [, b]) => (b as number) - (a as number))
-            .slice(0, 5)
-            .map(([file, count]) => ({ file, count }));
+      // Trigger the scan command
+      await vscode.commands.executeCommand("codeql-scanner.scan");
 
-        return {
-            total: results.length,
-            severityBreakdown: {
-                critical: severityBreakdown.critical || 0,
-                high: severityBreakdown.high || 0,
-                medium: severityBreakdown.medium || 0,
-                low: severityBreakdown.low || 0
-            },
-            topRules,
-            topFiles,
-            scanDate: new Date().toISOString()
-        };
+      const scanDuration = this._scanStartTime
+        ? Date.now() - this._scanStartTime
+        : 0;
+      const durationText = this.formatDuration(scanDuration);
+
+      this._view?.webview.postMessage({
+        command: "scanCompleted",
+        success: true,
+        message: `CodeQL scan completed successfully in ${durationText}!`,
+        duration: scanDuration,
+      });
+    } catch (error) {
+      const scanDuration = this._scanStartTime
+        ? Date.now() - this._scanStartTime
+        : 0;
+      const durationText = this.formatDuration(scanDuration);
+
+      this._view?.webview.postMessage({
+        command: "scanCompleted",
+        success: false,
+        message: `CodeQL scan failed after ${durationText}: ${error}`,
+        duration: scanDuration,
+      });
+    }
+  }
+
+  private async fetchRemoteAlerts() {
+    try {
+      this._fetchStartTime = Date.now();
+
+      this._view?.webview.postMessage({
+        command: "fetchStarted",
+        success: true,
+        message: "Fetching remote security alerts...",
+      });
+
+      const config = vscode.workspace.getConfiguration("codeql-scanner");
+      const token = config.get<string>("github.token");
+      const owner = config.get<string>("github.owner");
+      const repo = config.get<string>("github.repo");
+
+      if (!token || !owner || !repo) {
+        throw new Error(
+          "GitHub configuration is incomplete. Please configure token, owner, and repo."
+        );
+      }
+
+      // Update the service with the current token
+      this._githubService.updateToken(token);
+
+      // Use GitHubService to fetch CodeQL alerts
+      const codeqlAlerts = await this._githubService.getCodeQLAlerts(
+        owner,
+        repo
+      );
+
+      // Convert GitHub alerts to our ScanResult format
+      const scanResults = codeqlAlerts.map((alert: any) => ({
+        ruleId: alert.rule?.id || "unknown",
+        severity: this.mapGitHubSeverityToLocal(alert.rule?.severity),
+        message:
+          alert.message?.text || alert.rule?.description || "No description",
+        location: {
+          file: alert.most_recent_instance?.location?.path || "unknown",
+          startLine: alert.most_recent_instance?.location?.start_line || 1,
+          startColumn: alert.most_recent_instance?.location?.start_column || 1,
+          endLine: alert.most_recent_instance?.location?.end_line || 1,
+          endColumn: alert.most_recent_instance?.location?.end_column || 1,
+        },
+      }));
+
+      // Update the scan results and refresh summary
+      this.updateScanResults(scanResults);
+
+      // Also update the results provider if available
+      if (this._resultsProvider) {
+        this._resultsProvider.setResults(scanResults);
+        vscode.commands.executeCommand(
+          "setContext",
+          "codeql-scanner.hasResults",
+          scanResults.length > 0
+        );
+      }
+
+      const fetchDuration = this._fetchStartTime
+        ? Date.now() - this._fetchStartTime
+        : 0;
+      const durationText = this.formatDuration(fetchDuration);
+
+      this._view?.webview.postMessage({
+        command: "fetchCompleted",
+        success: true,
+        message: `Fetched ${scanResults.length} CodeQL security alerts from GitHub in ${durationText}`,
+        duration: fetchDuration,
+      });
+    } catch (error) {
+      const fetchDuration = this._fetchStartTime
+        ? Date.now() - this._fetchStartTime
+        : 0;
+      const durationText = this.formatDuration(fetchDuration);
+
+      this._view?.webview.postMessage({
+        command: "fetchCompleted",
+        success: false,
+        message: `Failed to fetch remote alerts after ${durationText}: ${error}`,
+        duration: fetchDuration,
+      });
+    }
+  }
+
+  private mapGitHubSeverityToLocal(severity?: string): string {
+    if (!severity) return "medium";
+
+    switch (severity.toLowerCase()) {
+      case "critical":
+        return "critical";
+      case "high":
+        return "high";
+      case "medium":
+      case "moderate":
+        return "medium";
+      case "low":
+      case "note":
+      case "info":
+        return "low";
+      default:
+        return "medium";
+    }
+  }
+
+  public updateScanResults(results: ScanResult[]): void {
+    this._scanResults = results;
+    this.loadAlertsSummary();
+  }
+
+  private async loadAlertsSummary() {
+    // If no scan results are stored locally, try to get them from results provider
+    let resultsToUse = this._scanResults;
+    if (resultsToUse.length === 0 && this._resultsProvider) {
+      try {
+        resultsToUse = this._resultsProvider.getResults();
+      } catch (error) {
+        this.logger.debug("UiProvider", "No previous scan results available");
+        resultsToUse = [];
+      }
     }
 
-    private formatDuration(milliseconds: number): string {
-        if (milliseconds < 1000) {
-            return `${milliseconds}ms`;
-        }
-        
-        const seconds = Math.floor(milliseconds / 1000);
-        if (seconds < 60) {
-            return `${seconds}s`;
-        }
-        
-        const minutes = Math.floor(seconds / 60);
-        const remainingSeconds = seconds % 60;
-        if (minutes < 60) {
-            return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
-        }
-        
-        const hours = Math.floor(minutes / 60);
-        const remainingMinutes = minutes % 60;
-        return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
+    const summary = this.generateAlertsSummary(resultsToUse);
+
+    this._view?.webview.postMessage({
+      command: "alertsSummaryLoaded",
+      summary: summary,
+    });
+  }
+
+  private generateAlertsSummary(results: ScanResult[]): any {
+    if (!results || results.length === 0) {
+      return {
+        total: 0,
+        severityBreakdown: { critical: 0, high: 0, medium: 0, low: 0 },
+        topRules: [],
+        topFiles: [],
+        scanDate: null,
+      };
     }
 
-    private detectLanguageFromFile(filePath: string): string {
-        const extension = path.extname(filePath).toLowerCase();
-        
-        // Map file extensions to languages
-        const extensionMap: { [key: string]: string } = {
-            '.js': 'javascript',
-            '.jsx': 'javascript',
-            '.ts': 'javascript', // TypeScript is handled by JavaScript extractor
-            '.tsx': 'javascript',
-            '.py': 'python',
-            '.java': 'java',
-            '.cs': 'csharp',
-            '.cpp': 'cpp',
-            '.c': 'cpp',
-            '.cc': 'cpp',
-            '.cxx': 'cpp',
-            '.h': 'cpp',
-            '.hpp': 'cpp',
-            '.go': 'go',
-            '.rb': 'ruby',
-            '.php': 'php',
-            '.swift': 'swift',
-            '.kt': 'kotlin',
-            '.scala': 'scala',
-        };
+    // Group by severity
+    const severityBreakdown: { [key: string]: number } = {
+      critical: 0,
+      high: 0,
+      medium: 0,
+      low: 0,
+    };
+    results.forEach((result) => {
+      const severity = result.severity || "medium";
+      if (severityBreakdown[severity] !== undefined) {
+        severityBreakdown[severity]++;
+      } else {
+        severityBreakdown[severity] = 1;
+      }
+    });
 
-        return extensionMap[extension] || 'unknown';
+    // Get top rules
+    const ruleCount: { [key: string]: number } = {};
+    results.forEach((result) => {
+      const ruleId = result.ruleId || "unknown";
+      ruleCount[ruleId] = (ruleCount[ruleId] || 0) + 1;
+    });
+
+    const topRules = Object.entries(ruleCount)
+      .sort(([, a], [, b]) => (b as number) - (a as number))
+      .slice(0, 5)
+      .map(([rule, count]) => ({ rule, count }));
+
+    // Get top files
+    const fileCount: { [key: string]: number } = {};
+    results.forEach((result) => {
+      const fileName = result.location?.file
+        ? result.location.file.split("/").pop() || "unknown"
+        : "unknown";
+      fileCount[fileName] = (fileCount[fileName] || 0) + 1;
+    });
+
+    const topFiles = Object.entries(fileCount)
+      .sort(([, a], [, b]) => (b as number) - (a as number))
+      .slice(0, 5)
+      .map(([file, count]) => ({ file, count }));
+
+    return {
+      total: results.length,
+      severityBreakdown: {
+        critical: severityBreakdown.critical || 0,
+        high: severityBreakdown.high || 0,
+        medium: severityBreakdown.medium || 0,
+        low: severityBreakdown.low || 0,
+      },
+      topRules,
+      topFiles,
+      scanDate: new Date().toISOString(),
+    };
+  }
+
+  private formatDuration(milliseconds: number): string {
+    if (milliseconds < 1000) {
+      return `${milliseconds}ms`;
     }
 
-    private _getHtmlForWebview(webview: vscode.Webview) {
-        return `<!DOCTYPE html>
+    const seconds = Math.floor(milliseconds / 1000);
+    if (seconds < 60) {
+      return `${seconds}s`;
+    }
+
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    if (minutes < 60) {
+      return remainingSeconds > 0
+        ? `${minutes}m ${remainingSeconds}s`
+        : `${minutes}m`;
+    }
+
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    return remainingMinutes > 0
+      ? `${hours}h ${remainingMinutes}m`
+      : `${hours}h`;
+  }
+
+  private _getHtmlForWebview(webview: vscode.Webview) {
+    return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -764,10 +954,106 @@ export class UiProvider implements vscode.WebviewViewProvider {
         .scan-section {
             position: relative;
         }
+
+        .language-checkbox {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+            padding: 8px;
+            border-radius: 4px;
+            transition: background-color 0.15s ease;
+        }
+
+        .language-checkbox:hover {
+            background-color: var(--vscode-list-hoverBackground);
+        }
+
+        .language-checkbox input[type="checkbox"] {
+            width: auto;
+            margin-right: 10px;
+            margin-bottom: 0;
+        }
+
+        .language-checkbox label {
+            margin-bottom: 0;
+            font-weight: normal;
+            cursor: pointer;
+            flex: 1;
+            text-transform: capitalize;
+        }
+
+        .language-icon {
+            width: 16px;
+            height: 16px;
+            margin-right: 8px;
+            border-radius: 2px;
+            display: inline-block;
+            font-size: 12px;
+            text-align: center;
+            line-height: 16px;
+        }
+
+        .language-javascript { background-color: #f7df1e; color: #000; }
+        .language-typescript { background-color: #3178c6; color: #fff; }
+        .language-python { background-color: #3776ab; color: #fff; }
+        .language-java { background-color: #ed8b00; color: #fff; }
+        .language-csharp { background-color: #239120; color: #fff; }
+        .language-cpp { background-color: #00599c; color: #fff; }
+        .language-go { background-color: #00add8; color: #fff; }
+        .language-ruby { background-color: #cc342d; color: #fff; }
+        .language-default { background-color: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+
+        .suite-radio {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 12px;
+            padding: 12px;
+            border-radius: 6px;
+            border: 1px solid var(--vscode-input-border);
+            transition: all 0.15s ease;
+            cursor: pointer;
+        }
+
+        .suite-radio:hover {
+            background-color: var(--vscode-list-hoverBackground);
+            border-color: var(--vscode-focusBorder);
+        }
+
+        .suite-radio input[type="radio"] {
+            width: auto;
+            margin-right: 12px;
+            margin-top: 2px;
+            cursor: pointer;
+        }
+
+        .suite-radio label {
+            margin-bottom: 0;
+            font-weight: normal;
+            cursor: pointer;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .suite-name {
+            font-weight: 600;
+            color: var(--vscode-foreground);
+            margin-bottom: 4px;
+        }
+
+        .suite-description {
+            font-size: 0.85em;
+            color: var(--vscode-descriptionForeground);
+            line-height: 1.3;
+        }
+
+        .suite-radio input[type="radio"]:checked + label .suite-name {
+            color: var(--vscode-focusBorder);
+        }
     </style>
 </head>
 <body>
-    <h2>CodeQL Scanner Configuration</h2>
+    <h2>CodeQL Scanner</h2>
 
     <div class="section scan-section">
         <h3>Local CodeQL Scanner</h3>
@@ -829,56 +1115,54 @@ export class UiProvider implements vscode.WebviewViewProvider {
             </div>
         </div>
     </div>
-    
-    <div class="section">
-        <h3>GitHub Configuration</h3>
-        
-        <div class="form-group">
-            <label for="githubToken">GitHub Token:</label>
-            <input type="password" id="githubToken" placeholder="ghp_...">
-            <div class="help-text">Personal access token with repo and security_events scopes</div>
-        </div>
-        
-        <div class="form-group">
-            <label for="githubOwner">Repository Owner:</label>
-            <input type="text" id="githubOwner" placeholder="username or organization">
-        </div>
-        
-        <div class="form-group">
-            <label for="githubRepo">Repository Name:</label>
-            <input type="text" id="githubRepo" placeholder="repository-name">
-        </div>
-        
-        <button onclick="testConnection()">Test Connection</button>
-    </div>
-    
-    <div class="section">
-        <h3>CodeQL CLI Configuration</h3>
-        
-        <div class="form-group">
-            <label for="codeqlPath">CodeQL CLI Path:</label>
-            <input type="text" id="codeqlPath" placeholder="codeql">
-            <div class="help-text">Path to the CodeQL CLI executable (e.g., 'codeql' if in PATH, or full path)</div>
-        </div>
-    </div>
-    
+
     <div class="section">
         <h3>Scan Configuration</h3>
-        
-        
         <div class="form-group">
-            <label for="suites">Query Suites:</label>
-            <textarea id="suites" class="array-input" placeholder="security-extended&#10;security-and-quality"></textarea>
-            <div class="help-text">One suite per line. Available: security-extended, security-and-quality, code-scanning</div>
-        </div>
-        
-        <div class="form-group">
-            <label for="languages">Languages:</label>
-            <textarea id="languages" class="array-input" placeholder="javascript&#10;typescript&#10;python"></textarea>
-            <div class="help-text">One language per line. Supported: javascript, typescript, python, java, csharp, cpp, go, ruby</div>
+            <label for="suites">Query Suite:</label>
+            <div id="suitesContainer">
+                <div class="suite-radio">
+                    <input type="radio" id="suite-code-scanning" name="suite" value="code-scanning">
+                    <label for="suite-code-scanning">
+                        <span class="suite-name">Default</span>
+                        <span class="suite-description">Basic code scanning queries for CI/CD</span>
+                    </label>
+                </div>
+                <div class="suite-radio">
+                    <input type="radio" id="suite-security-extended" name="suite" value="security-extended">
+                    <label for="suite-security-extended">
+                        <span class="suite-name">Security Extended</span>
+                        <span class="suite-description">Extended security queries with additional checks</span>
+                    </label>
+                </div>
+                <div class="suite-radio">
+                    <input type="radio" id="suite-security-and-quality" name="suite" value="security-and-quality">
+                    <label for="suite-security-and-quality">
+                        <span class="suite-name">Security and Quality</span>
+                        <span class="suite-description">Security queries plus code quality checks</span>
+                    </label>
+                </div>
+                
+            </div>
+            <div class="help-text">Select the CodeQL query suite to run during analysis</div>
         </div>
     </div>
-    
+    <div class="section">
+        <h3>Langauge Selection</h3>
+        <div class="form-group">
+            <label for="languages">Programming Languages:</label>
+            <div id="languagesContainer">
+                <div style="margin-bottom: 10px;">
+                    <button onclick="loadSupportedLanguages()" id="loadLanguagesButton" type="button">🔄 Load Available Languages</button>
+                </div>
+                <div id="languagesList" style="display: none;">
+                    <!-- Language checkboxes will be populated here -->
+                </div>
+            </div>
+            <div class="help-text">Select the programming languages to analyze. Languages are auto-detected from your CodeQL CLI installation.</div>
+        </div>
+    </div>
+
     <button onclick="saveConfig()">Save Configuration</button>
     <button onclick="loadConfig()">Reload Configuration</button>
     
@@ -892,8 +1176,8 @@ export class UiProvider implements vscode.WebviewViewProvider {
                 githubToken: document.getElementById('githubToken').value,
                 githubOwner: document.getElementById('githubOwner').value,
                 githubRepo: document.getElementById('githubRepo').value,
-                suites: document.getElementById('suites').value.split('\\n').filter(s => s.trim()),
-                languages: document.getElementById('languages').value.split('\\n').filter(l => l.trim()),
+                suites: [getSelectedSuite()],
+                languages: getSelectedLanguages(),
                 codeqlPath: document.getElementById('codeqlPath').value
             };
             
@@ -901,6 +1185,97 @@ export class UiProvider implements vscode.WebviewViewProvider {
                 command: 'saveConfig',
                 config: config
             });
+        }
+
+        function getSelectedSuite() {
+            const selectedRadio = document.querySelector('input[name="suite"]:checked');
+            return selectedRadio ? selectedRadio.value : 'code-scanning';
+        }
+
+        function setSelectedSuite(suite) {
+            const radioButton = document.querySelector('input[name="suite"][value="' + suite + '"]');
+            if (radioButton) {
+                radioButton.checked = true;
+            } else {
+                // Default to code-scanning if suite not found
+                const defaultRadio = document.querySelector('input[name="suite"][value="code-scanningd"]');
+                if (defaultRadio) defaultRadio.checked = true;
+            }
+        }
+
+        function getSelectedLanguages() {
+            const checkboxes = document.querySelectorAll('#languagesList input[type="checkbox"]:checked');
+            return Array.from(checkboxes).map(cb => cb.value);
+        }
+
+        function setSelectedLanguages(languages) {
+            const checkboxes = document.querySelectorAll('#languagesList input[type="checkbox"]');
+            checkboxes.forEach(cb => {
+                cb.checked = languages.includes(cb.value);
+            });
+        }
+
+        function loadSupportedLanguages() {
+            const button = document.getElementById('loadLanguagesButton');
+            button.disabled = true;
+            button.textContent = '⏳ Loading Languages...';
+            
+            vscode.postMessage({ command: 'loadSupportedLanguages' });
+        }
+
+        function displaySupportedLanguages(languages) {
+            const container = document.getElementById('languagesList');
+            const button = document.getElementById('loadLanguagesButton');
+            
+            if (languages.length === 0) {
+                container.innerHTML = '<div style="color: var(--vscode-errorForeground); font-style: italic;">No languages found. Please check your CodeQL CLI installation.</div>';
+                container.style.display = 'block';
+                button.textContent = '🔄 Retry Loading Languages';
+                button.disabled = false;
+                return;
+            }
+
+            container.innerHTML = '';
+            languages.forEach(lang => {
+                const checkboxContainer = document.createElement('div');
+                checkboxContainer.className = 'language-checkbox';
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.id = 'lang-' + lang;
+                checkbox.value = lang;
+                
+                const icon = document.createElement('span');
+                icon.className = 'language-icon language-' + lang;
+                icon.textContent = getLanguageIcon(lang);
+                
+                const label = document.createElement('label');
+                label.htmlFor = 'lang-' + lang;
+                label.textContent = lang;
+                
+                checkboxContainer.appendChild(checkbox);
+                checkboxContainer.appendChild(icon);
+                checkboxContainer.appendChild(label);
+                container.appendChild(checkboxContainer);
+            });
+            
+            container.style.display = 'block';
+            button.textContent = '✅ Languages Loaded';
+            button.disabled = false;
+        }
+
+        function getLanguageIcon(lang) {
+            const icons = {
+                'javascript': 'JS',
+                'typescript': 'TS',
+                'python': 'PY',
+                'java': 'JA',
+                'csharp': 'C#',
+                'cpp': 'C++',
+                'go': 'GO',
+                'ruby': 'RB'
+            };
+            return icons[lang] || lang.substring(0, 2).toUpperCase();
         }
         
         function loadConfig() {
@@ -1056,9 +1431,32 @@ export class UiProvider implements vscode.WebviewViewProvider {
                     document.getElementById('githubToken').value = config.githubToken || '';
                     document.getElementById('githubOwner').value = config.githubOwner || '';
                     document.getElementById('githubRepo').value = config.githubRepo || '';
-                    document.getElementById('suites').value = config.suites.join('\\n');
-                    document.getElementById('languages').value = config.languages.join('\\n');
+                    
+                    // Set selected suite (take first suite if multiple, default to security-extended)
+                    const selectedSuite = config.suites && config.suites.length > 0 ? config.suites[0] : 'security-extended';
+                    setSelectedSuite(selectedSuite);
+                    
                     document.getElementById('codeqlPath').value = config.codeqlPath || 'codeql';
+                    
+                    // Set selected languages if available
+                    if (config.languages && config.languages.length > 0) {
+                        setSelectedLanguages(config.languages);
+                    }
+                    break;
+
+                case 'supportedLanguagesLoaded':
+                    if (message.success) {
+                        displaySupportedLanguages(message.languages);
+                        // Auto-load configuration after languages are loaded
+                        vscode.postMessage({ command: 'loadConfig' });
+                    } else {
+                        const container = document.getElementById('languagesList');
+                        const button = document.getElementById('loadLanguagesButton');
+                        container.innerHTML = '<div style="color: var(--vscode-errorForeground); font-style: italic;">' + message.message + '</div>';
+                        container.style.display = 'block';
+                        button.textContent = '🔄 Retry Loading Languages';
+                        button.disabled = false;
+                    }
                     break;
                     
                 case 'configSaved':
@@ -1125,5 +1523,5 @@ export class UiProvider implements vscode.WebviewViewProvider {
     </script>
 </body>
 </html>`;
-    }
+  }
 }

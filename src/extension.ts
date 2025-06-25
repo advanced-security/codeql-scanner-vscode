@@ -19,6 +19,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // Set up communication between providers
     uiProvider.setResultsProvider(resultsProvider);
+    uiProvider.setCodeQLService(codeqlService);
 
     // Register webview provider for configuration
     context.subscriptions.push(
