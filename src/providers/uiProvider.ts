@@ -48,7 +48,7 @@ export class UiProvider implements vscode.WebviewViewProvider {
       (message) => {
         switch (message.command) {
           case "saveConfig":
-            this.saveConfiguration(message.config);
+            this.saveConfiguration(message.config, message.isAutoSave);
             break;
           case "loadConfig":
             this.loadConfiguration();
@@ -81,7 +81,7 @@ export class UiProvider implements vscode.WebviewViewProvider {
     this.autoLoadLanguagesIfNeeded();
   }
 
-  private async saveConfiguration(config: any) {
+  private async saveConfiguration(config: any, isAutoSave: boolean = false) {
     this.logger.logServiceCall("UiProvider", "saveConfiguration", "started");
     const workspaceConfig = vscode.workspace.getConfiguration("codeql-scanner");
 
@@ -138,11 +138,15 @@ export class UiProvider implements vscode.WebviewViewProvider {
         command: "configSaved",
         success: true,
         message: "Configuration saved successfully!",
+        isAutoSave: isAutoSave,
       });
 
-      vscode.window.showInformationMessage(
-        "CodeQL Scanner configuration saved!"
-      );
+      // Only show VS Code notification for manual saves
+      if (!isAutoSave) {
+        vscode.window.showInformationMessage(
+          "CodeQL Scanner configuration saved!"
+        );
+      }
     } catch (error) {
       this.logger.logServiceCall(
         "UiProvider",
@@ -154,6 +158,7 @@ export class UiProvider implements vscode.WebviewViewProvider {
         command: "configSaved",
         success: false,
         message: `Failed to save configuration: ${error}`,
+        isAutoSave: isAutoSave,
       });
     }
   }
@@ -697,24 +702,327 @@ export class UiProvider implements vscode.WebviewViewProvider {
             cursor: not-allowed;
         }
         
+        /* Enhanced Action Buttons Styling */
+        .action-button {
+            position: relative;
+            padding: 14px 24px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            min-width: 200px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            text-transform: none;
+            letter-spacing: 0.3px;
+            margin: 8px 8px 8px 0;
+            outline: none;
+            user-select: none;
+        }
+
+        .action-button::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: left 0.5s;
+        }
+
+        .action-button:hover::before {
+            left: 100%;
+        }
+
+        .action-button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        .action-button:active:not(:disabled) {
+            transform: translateY(0);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            transition: all 0.1s ease;
+        }
+
+        .action-button:focus-visible {
+            outline: 2px solid var(--vscode-focusBorder);
+            outline-offset: 2px;
+        }
+
+        .action-button:disabled {
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+            opacity: 0.7;
+        }
+
+        .action-button:disabled::before {
+            display: none;
+        }
+
+        /* Local Scan Button */
         #scanButton {
-            background-color: var(--vscode-button-secondaryBackground, #0e639c);
-            color: var(--vscode-button-secondaryForeground, white);
-            font-weight: bold;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+            position: relative;
         }
-        
+
         #scanButton:hover:not(:disabled) {
-            background-color: var(--vscode-button-secondaryHoverBackground, #1177bb);
+            background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
         }
-        
+
+        #scanButton:disabled {
+            background: linear-gradient(135deg, #9ca3af 0%, #6b7280 100%);
+        }
+
+        /* Add pulse effect for scan button */
+        #scanButton::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.3);
+            transition: all 0.6s ease;
+            transform: translate(-50%, -50%);
+        }
+
+        #scanButton:active:not(:disabled)::after {
+            width: 200px;
+            height: 200px;
+            opacity: 0;
+        }
+
+        .scan-icon {
+            font-size: 16px;
+            animation: pulse 2s infinite;
+            transition: all 0.3s ease;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.7; transform: scale(1.05); }
+        }
+
+        /* Fetch Remote Button */
         #fetchButton {
-            background-color: var(--vscode-button-secondaryBackground, #228b22);
-            color: var(--vscode-button-secondaryForeground, white);
-            font-weight: bold;
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+            color: white;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+            position: relative;
         }
-        
+
         #fetchButton:hover:not(:disabled) {
-            background-color: var(--vscode-button-secondaryHoverBackground, #32cd32);
+            background: linear-gradient(135deg, #38a169 0%, #2f855a 100%);
+            box-shadow: 0 6px 20px rgba(72, 187, 120, 0.4);
+        }
+
+        #fetchButton:disabled {
+            background: linear-gradient(135deg, #9ca3af 0%, #6b7280 100%);
+        }
+
+        /* Add ripple effect for fetch button */
+        #fetchButton::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.3);
+            transition: all 0.6s ease;
+            transform: translate(-50%, -50%);
+        }
+
+        #fetchButton:active:not(:disabled)::after {
+            width: 200px;
+            height: 200px;
+            opacity: 0;
+        }
+
+        .fetch-icon {
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+
+        #fetchButton:hover:not(:disabled) .fetch-icon {
+            animation: bounce 0.6s ease-in-out;
+        }
+
+        @keyframes bounce {
+            0%, 20%, 60%, 100% { transform: translateY(0); }
+            40% { transform: translateY(-4px); }
+            80% { transform: translateY(-2px); }
+        }
+
+        /* Loading state animation */
+        .action-button.loading {
+            position: relative;
+            color: transparent !important;
+            text-shadow: none !important;
+        }
+
+        .action-button.loading::after {
+            content: '';
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            top: 50%;
+            left: 50%;
+            margin-left: -10px;
+            margin-top: -10px;
+            border: 2px solid transparent;
+            border-top: 2px solid rgba(255, 255, 255, 0.8);
+            border-radius: 50%;
+            animation: loading-spin 1s linear infinite;
+            z-index: 10;
+        }
+
+        @keyframes loading-spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Success/Error state animations */
+        .action-button.success {
+            animation: success-flash 0.6s ease-in-out;
+        }
+
+        .action-button.error {
+            animation: error-shake 0.6s ease-in-out;
+        }
+
+        @keyframes success-flash {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); box-shadow: 0 0 20px rgba(34, 197, 94, 0.5); }
+        }
+
+        @keyframes error-shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-4px); }
+            75% { transform: translateX(4px); }
+        }
+
+        /* Enhanced button container */
+        .button-group {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin: 20px 0;
+        }
+
+        .button-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        /* Status indicators */
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: var(--vscode-descriptionForeground);
+            padding: 4px 8px;
+            border-radius: 4px;
+            background: var(--vscode-input-background);
+            border: 1px solid var(--vscode-input-border);
+        }
+
+        .status-success {
+            color: #22c55e;
+            border-color: rgba(34, 197, 94, 0.3);
+            background: rgba(34, 197, 94, 0.1);
+        }
+
+        .status-error {
+            color: #ef4444;
+            border-color: rgba(239, 68, 68, 0.3);
+            background: rgba(239, 68, 68, 0.1);
+        }
+
+        /* Auto-save indicator styling */
+        .auto-save-indicator {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: linear-gradient(135deg, rgba(34, 197, 94, 0.9), rgba(16, 185, 129, 0.9));
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3);
+            z-index: 1000;
+            opacity: 0;
+            transform: translateX(100px);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .auto-save-indicator.show {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .auto-save-indicator::before {
+            content: '✓';
+            font-size: 14px;
+        }
+        @media (max-width: 480px) {
+            .button-row {
+                flex-direction: column;
+            }
+            
+            .action-button {
+                width: 100%;
+                min-width: unset;
+            }
+            
+            .timer-display {
+                margin-top: 8px;
+                align-self: flex-start;
+            }
+
+            .summary-grid {
+                grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+                gap: 8px;
+            }
+
+            .summary-card {
+                padding: 8px 6px;
+            }
+
+            .summary-number {
+                font-size: 16px;
+            }
+
+            .summary-label {
+                font-size: 8px;
+            }
+
+            #detailsSection > div {
+                grid-template-columns: 1fr !important;
+                gap: 8px !important;
+            }
         }
         
         .success {
@@ -758,187 +1066,216 @@ export class UiProvider implements vscode.WebviewViewProvider {
         }
         
         .summary-section {
-            background-color: var(--vscode-editor-inactiveSelectionBackground);
-            border: 1px solid var(--vscode-panel-border);
-            border-radius: 5px;
-            padding: 15px;
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%);
+            border: 1px solid rgba(102, 126, 234, 0.2);
+            border-radius: 12px;
+            padding: 16px;
             margin-bottom: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .summary-section::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, #667eea, #764ba2, #48bb78, #f093fb);
+            animation: shimmer 3s ease-in-out infinite;
+        }
+
+        @keyframes shimmer {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 1; }
         }
         
         .summary-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-bottom: 15px;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px;
+            margin-bottom: 12px;
         }
         
         .summary-card {
-            background-color: var(--vscode-input-background);
-            border: 1px solid var(--vscode-input-border);
-            border-radius: 6px;
-            padding: 15px 12px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 10px 8px;
             text-align: center;
-            transition: all 0.2s ease;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             position: relative;
             overflow: hidden;
+            backdrop-filter: blur(10px);
+            cursor: pointer;
         }
         
         .summary-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            transform: translateY(-3px) scale(1.02);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+            border-color: rgba(102, 126, 234, 0.4);
+        }
+
+        .summary-card::after {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: linear-gradient(45deg, transparent, rgba(255, 255, 255, 0.05), transparent);
+            transform: rotate(45deg);
+            transition: all 0.6s;
+            opacity: 0;
+        }
+
+        .summary-card:hover::after {
+            animation: card-shine 0.6s ease-in-out;
+        }
+
+        @keyframes card-shine {
+            0% { transform: translateX(-100%) rotate(45deg); opacity: 0; }
+            50% { opacity: 1; }
+            100% { transform: translateX(100%) rotate(45deg); opacity: 0; }
         }
         
         .summary-card.critical {
-            background: linear-gradient(135deg, rgba(255, 67, 67, 0.08) 0%, rgba(255, 67, 67, 0.12) 100%);
-            border-color: rgba(255, 67, 67, 0.4);
+            background: linear-gradient(135deg, rgba(255, 67, 67, 0.15) 0%, rgba(255, 67, 67, 0.08) 100%);
+            border-color: rgba(255, 67, 67, 0.3);
+            box-shadow: 0 0 20px rgba(255, 67, 67, 0.1);
         }
         
         .summary-card.critical:hover {
-            background: linear-gradient(135deg, rgba(255, 67, 67, 0.12) 0%, rgba(255, 67, 67, 0.18) 100%);
-            border-color: rgba(255, 67, 67, 0.6);
+            background: linear-gradient(135deg, rgba(255, 67, 67, 0.2) 0%, rgba(255, 67, 67, 0.12) 100%);
+            border-color: rgba(255, 67, 67, 0.5);
+            box-shadow: 0 8px 25px rgba(255, 67, 67, 0.2);
         }
         
         .summary-card.high {
-            background: linear-gradient(135deg, rgba(255, 87, 34, 0.08) 0%, rgba(255, 87, 34, 0.12) 100%);
-            border-color: rgba(255, 87, 34, 0.4);
+            background: linear-gradient(135deg, rgba(255, 87, 34, 0.15) 0%, rgba(255, 87, 34, 0.08) 100%);
+            border-color: rgba(255, 87, 34, 0.3);
+            box-shadow: 0 0 20px rgba(255, 87, 34, 0.1);
         }
         
         .summary-card.high:hover {
-            background: linear-gradient(135deg, rgba(255, 87, 34, 0.12) 0%, rgba(255, 87, 34, 0.18) 100%);
-            border-color: rgba(255, 87, 34, 0.6);
+            background: linear-gradient(135deg, rgba(255, 87, 34, 0.2) 0%, rgba(255, 87, 34, 0.12) 100%);
+            border-color: rgba(255, 87, 34, 0.5);
+            box-shadow: 0 8px 25px rgba(255, 87, 34, 0.2);
         }
         
         .summary-card.medium {
-            background: linear-gradient(135deg, rgba(255, 193, 7, 0.08) 0%, rgba(255, 193, 7, 0.12) 100%);
-            border-color: rgba(255, 193, 7, 0.4);
+            background: linear-gradient(135deg, rgba(255, 193, 7, 0.15) 0%, rgba(255, 193, 7, 0.08) 100%);
+            border-color: rgba(255, 193, 7, 0.3);
+            box-shadow: 0 0 20px rgba(255, 193, 7, 0.1);
         }
         
         .summary-card.medium:hover {
-            background: linear-gradient(135deg, rgba(255, 193, 7, 0.12) 0%, rgba(255, 193, 7, 0.18) 100%);
-            border-color: rgba(255, 193, 7, 0.6);
+            background: linear-gradient(135deg, rgba(255, 193, 7, 0.2) 0%, rgba(255, 193, 7, 0.12) 100%);
+            border-color: rgba(255, 193, 7, 0.5);
+            box-shadow: 0 8px 25px rgba(255, 193, 7, 0.2);
         }
         
         .summary-card.low {
-            background: linear-gradient(135deg, rgba(33, 150, 243, 0.08) 0%, rgba(33, 150, 243, 0.12) 100%);
-            border-color: rgba(33, 150, 243, 0.4);
+            background: linear-gradient(135deg, rgba(33, 150, 243, 0.15) 0%, rgba(33, 150, 243, 0.08) 100%);
+            border-color: rgba(33, 150, 243, 0.3);
+            box-shadow: 0 0 20px rgba(33, 150, 243, 0.1);
         }
         
         .summary-card.low:hover {
-            background: linear-gradient(135deg, rgba(33, 150, 243, 0.12) 0%, rgba(33, 150, 243, 0.18) 100%);
-            border-color: rgba(33, 150, 243, 0.6);
+            background: linear-gradient(135deg, rgba(33, 150, 243, 0.2) 0%, rgba(33, 150, 243, 0.12) 100%);
+            border-color: rgba(33, 150, 243, 0.5);
+            box-shadow: 0 8px 25px rgba(33, 150, 243, 0.2);
         }
         
         .summary-number {
-            font-size: 28px;
-            font-weight: bold;
+            font-size: 20px;
+            font-weight: 700;
             color: var(--vscode-foreground);
-            margin-bottom: 4px;
+            margin-bottom: 2px;
             display: block;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
         }
         
         .summary-label {
-            font-size: 11px;
+            font-size: 9px;
             color: var(--vscode-descriptionForeground);
-            margin-top: 5px;
-            font-weight: 500;
+            margin-top: 2px;
+            font-weight: 600;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.8px;
+            opacity: 0.8;
         }
         
         .severity-critical { 
-            color: #ff4343 !important; 
-            font-weight: bold; 
-            text-shadow: 0 0 3px rgba(255, 67, 67, 0.3);
-            position: relative;
+            color: #ff6b6b !important; 
+            font-weight: 700; 
+            text-shadow: 0 0 8px rgba(255, 107, 107, 0.4);
+            animation: critical-pulse 2s ease-in-out infinite;
         }
-        
-        .severity-critical::before {
-            content: "🔥";
-            position: absolute;
-            top: -2px;
-            right: -20px;
-            font-size: 14px;
-            opacity: 0.6;
+
+        @keyframes critical-pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.8; transform: scale(1.05); }
         }
         
         .severity-high { 
-            color: #ff5722 !important; 
-            font-weight: bold;
-            position: relative;
-        }
-        
-        .severity-high::before {
-            content: "⚠️";
-            position: absolute;
-            top: -2px;
-            right: -20px;
-            font-size: 14px;
-            opacity: 0.6;
+            color: #ff8a50 !important; 
+            font-weight: 700;
+            text-shadow: 0 0 6px rgba(255, 138, 80, 0.3);
         }
         
         .severity-medium { 
-            color: #ffc107 !important; 
+            color: #ffd93d !important; 
             font-weight: 600;
-            position: relative;
-        }
-        
-        .severity-medium::before {
-            content: "⚡";
-            position: absolute;
-            top: -2px;
-            right: -20px;
-            font-size: 14px;
-            opacity: 0.6;
+            text-shadow: 0 0 4px rgba(255, 217, 61, 0.3);
         }
         
         .severity-low { 
-            color: #2196f3 !important; 
+            color: #74c0fc !important; 
             font-weight: 500;
-            position: relative;
-        }
-        
-        .severity-low::before {
-            content: "ℹ️";
-            position: absolute;
-            top: -2px;
-            right: -20px;
-            font-size: 14px;
-            opacity: 0.6;
+            text-shadow: 0 0 3px rgba(116, 192, 252, 0.3);
         }
         
         .top-items {
-            margin-top: 20px;
+            margin-top: 12px;
         }
         
         .top-items h4 {
-            margin: 0 0 12px 0;
-            font-size: 14px;
+            margin: 0 0 8px 0;
+            font-size: 12px;
             color: var(--vscode-foreground);
             font-weight: 600;
+            opacity: 0.9;
+            display: flex;
+            align-items: center;
+            gap: 6px;
         }
         
         .top-list {
             list-style: none;
             padding: 0;
             margin: 0;
-            background-color: var(--vscode-input-background);
-            border-radius: 4px;
-            border: 1px solid var(--vscode-input-border);
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
             overflow: hidden;
+            backdrop-filter: blur(5px);
         }
         
         .top-list li {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 10px 12px;
-            border-bottom: 1px solid var(--vscode-panel-border);
-            font-size: 12px;
-            transition: background-color 0.15s ease;
+            padding: 6px 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            font-size: 11px;
+            transition: all 0.2s ease;
         }
         
         .top-list li:hover {
-            background-color: var(--vscode-list-hoverBackground);
+            background: rgba(102, 126, 234, 0.1);
+            transform: translateX(2px);
         }
         
         .top-list li:last-child {
@@ -946,32 +1283,76 @@ export class UiProvider implements vscode.WebviewViewProvider {
         }
         
         .top-list li .count {
-            background-color: var(--vscode-badge-background);
-            color: var(--vscode-badge-foreground);
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-size: 11px;
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.8), rgba(118, 75, 162, 0.8));
+            color: white;
+            padding: 2px 6px;
+            border-radius: 8px;
+            font-size: 10px;
             font-weight: 600;
-            min-width: 20px;
+            min-width: 16px;
             text-align: center;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
         }
         
         .no-results {
             text-align: center;
             color: var(--vscode-descriptionForeground);
-            font-style: italic;
-            padding: 20px;
+            padding: 16px;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 8px;
+            border: 1px dashed rgba(255, 255, 255, 0.1);
         }
         
         .timer-display {
-            font-size: 0.9em;
+            font-size: 12px;
             color: var(--vscode-descriptionForeground);
-            margin-left: 10px;
-            font-family: monospace;
+            font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Courier New', monospace;
+            background: var(--vscode-input-background);
+            padding: 6px 12px;
+            border-radius: 6px;
+            border: 1px solid var(--vscode-input-border);
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            min-width: 120px;
+            justify-content: center;
+        }
+
+        .timer-display::before {
+            content: '⏱️';
+            font-size: 14px;
         }
         
+        /* Action Section Enhancements */
         .scan-section {
+            background: var(--vscode-editor-background);
+            border: 1px solid var(--vscode-panel-border);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
             position: relative;
+            overflow: hidden;
+        }
+
+        .scan-section::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #667eea, #764ba2, #48bb78);
+            opacity: 0.6;
+        }
+
+        .scan-section h3 {
+            margin: 0 0 16px 0;
+            color: var(--vscode-foreground);
+            font-size: 16px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
 
         .language-checkbox {
@@ -1085,62 +1466,75 @@ export class UiProvider implements vscode.WebviewViewProvider {
     <h2>CodeQL Scanner</h2>
 
     <div class="section scan-section">
-        <h3>Local CodeQL Scanner</h3>
-        <div>
-            <button onclick="runLocalScan()" id="scanButton">🔍 Run Local CodeQL Scanner</button>
-            <span id="scanTimer" class="timer-display" style="display: none;"></span>
-        </div>
-        <div>
-            <button onclick="fetchRemoteAlerts()" id="fetchButton">🔄 Fetch Remote Security Alerts</button>
+        <h3>🚀 Actions</h3>
+        <div class="button-group">
+            <div class="button-row">
+                <button onclick="runLocalScan()" id="scanButton" class="action-button">
+                    <span class="scan-icon">🔍</span>
+                    <span>Run Local CodeQL Scanner</span>
+                </button>
+                <span id="scanTimer" class="timer-display" style="display: none;"></span>
+            </div>
+            <div class="button-row">
+                <button onclick="fetchRemoteAlerts()" id="fetchButton" class="action-button">
+                    <span class="fetch-icon">🌐</span>
+                    <span>Fetch Remote Security Alerts</span>
+                </button>
+                <span id="fetchTimer" class="timer-display" style="display: none;"></span>
+            </div>
         </div>
     </div>
 
     <div class="section" id="summarySection" style="display: none;">
-        <h3>🔒 Security Alerts Summary</h3>
+        <h3>🔒 Security Dashboard</h3>
         <div class="summary-section">
             <div class="summary-grid">
                 <div class="summary-card">
                     <div class="summary-number" id="totalAlerts">0</div>
-                    <div class="summary-label">📊 Total Alerts</div>
+                    <div class="summary-label">Total</div>
                 </div>
                 <div class="summary-card critical">
                     <div class="summary-number severity-critical" id="criticalAlerts">0</div>
-                    <div class="summary-label">🔥 Critical Severity</div>
+                    <div class="summary-label">Critical</div>
                 </div>
                 <div class="summary-card high">
                     <div class="summary-number severity-high" id="highAlerts">0</div>
-                    <div class="summary-label">⚠️ High Severity</div>
+                    <div class="summary-label">High</div>
                 </div>
                 <div class="summary-card medium">
                     <div class="summary-number severity-medium" id="mediumAlerts">0</div>
-                    <div class="summary-label">⚡ Medium Severity</div>
+                    <div class="summary-label">Medium</div>
                 </div>
                 <div class="summary-card low">
                     <div class="summary-number severity-low" id="lowAlerts">0</div>
-                    <div class="summary-label">ℹ️ Low Severity</div>
+                    <div class="summary-label">Low</div>
                 </div>
             </div>
 
             <div id="detailsSection" style="display: none;">
-                <div class="top-items">
-                    <h4>🔍 Top Vulnerability Types</h4>
-                    <ul class="top-list" id="topRules"></ul>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div class="top-items">
+                        <h4>🎯 Top Vulnerabilities</h4>
+                        <ul class="top-list" id="topRules"></ul>
+                    </div>
+                    
+                    <div class="top-items">
+                        <h4>📄 Affected Files</h4>
+                        <ul class="top-list" id="topFiles"></ul>
+                    </div>
                 </div>
                 
-                <div class="top-items">
-                    <h4>📁 Most Affected Files</h4>
-                    <ul class="top-list" id="topFiles"></ul>
-                </div>
-                
-                <div class="top-items" style="margin-top: 15px;">
-                    <small style="color: var(--vscode-descriptionForeground);">
-                        Last scan: <span id="scanDate">Never</span>
+                <div class="top-items" style="margin-top: 10px; text-align: center;">
+                    <small style="color: var(--vscode-descriptionForeground); font-size: 10px; opacity: 0.7;">
+                        Last scan: <span id="scanDate" style="font-weight: 600;">Never</span>
                     </small>
                 </div>
             </div>
             
             <div id="noResultsMessage" class="no-results">
-                No security alerts found. Run a scan to see results.
+                <div style="font-size: 14px; margin-bottom: 4px;">🛡️</div>
+                <div style="font-size: 12px; opacity: 0.8;">No security alerts detected</div>
+                <div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">Run a scan to analyze your code</div>
             </div>
         </div>
     </div>
@@ -1217,11 +1611,16 @@ export class UiProvider implements vscode.WebviewViewProvider {
     <button onclick="loadConfig()">Reload Configuration</button>
     
     <div id="message"></div>
+    
+    <!-- Auto-save indicator -->
+    <div id="autoSaveIndicator" class="auto-save-indicator">
+        Configuration auto-saved
+    </div>
 
     <script>
         const vscode = acquireVsCodeApi();
         
-        function saveConfig() {
+        function saveConfig(isAutoSave = false) {
             const config = {
                 githubToken: document.getElementById('githubToken').value,
                 githubOwner: document.getElementById('githubOwner').value,
@@ -1234,8 +1633,14 @@ export class UiProvider implements vscode.WebviewViewProvider {
             
             vscode.postMessage({
                 command: 'saveConfig',
-                config: config
+                config: config,
+                isAutoSave: isAutoSave
             });
+            
+            // Show subtle feedback for auto-saves
+            if (isAutoSave) {
+                showAutoSaveIndicator();
+            }
         }
 
         function getSelectedSuite() {
@@ -1279,6 +1684,15 @@ export class UiProvider implements vscode.WebviewViewProvider {
             const checkboxes = document.querySelectorAll('#languagesList input[type="checkbox"]');
             checkboxes.forEach(cb => {
                 cb.checked = languages.includes(cb.value);
+                
+                // Ensure event listeners are attached for auto-save
+                if (!cb.hasAttribute('data-listener-attached')) {
+                    cb.addEventListener('change', function() {
+                        // Auto-save configuration when language selection changes
+                        saveConfig(true);
+                    });
+                    cb.setAttribute('data-listener-attached', 'true');
+                }
             });
         }
 
@@ -1311,6 +1725,13 @@ export class UiProvider implements vscode.WebviewViewProvider {
                 checkbox.type = 'checkbox';
                 checkbox.id = 'lang-' + lang;
                 checkbox.value = lang;
+                
+                // Add event listener for automatic configuration saving
+                checkbox.addEventListener('change', function() {
+                    // Auto-save configuration when language selection changes
+                    saveConfig(true);
+                });
+                checkbox.setAttribute('data-listener-attached', 'true');
                 
                 const icon = document.createElement('span');
                 icon.className = 'language-icon language-' + lang;
@@ -1356,7 +1777,13 @@ export class UiProvider implements vscode.WebviewViewProvider {
         function runLocalScan() {
             const scanButton = document.getElementById('scanButton');
             scanButton.disabled = true;
-            scanButton.textContent = '⏳ Scanning...';
+            scanButton.classList.add('loading');
+            
+            // Update text and icon
+            const scanIcon = scanButton.querySelector('.scan-icon');
+            const scanText = scanButton.querySelector('span:last-child');
+            scanIcon.textContent = '⏳';
+            scanText.textContent = 'Scanning in Progress...';
             
             // Clear any previous timer display
             clearTimerDisplay('scanTimer');
@@ -1369,7 +1796,13 @@ export class UiProvider implements vscode.WebviewViewProvider {
             const fetchButton = document.getElementById('fetchButton');
             if (fetchButton) {
                 fetchButton.disabled = true;
-                fetchButton.textContent = '⏳ Fetching Alerts...';
+                fetchButton.classList.add('loading');
+                
+                // Update text and icon
+                const fetchIcon = fetchButton.querySelector('.fetch-icon');
+                const fetchText = fetchButton.querySelector('span:last-child');
+                fetchIcon.textContent = '⚡';
+                fetchText.textContent = 'Fetching Alerts...';
             }
             
             // Clear any previous timer display
@@ -1439,6 +1872,15 @@ export class UiProvider implements vscode.WebviewViewProvider {
             setTimeout(() => {
                 messageEl.style.display = 'none';
             }, 5000);
+        }
+        
+        function showAutoSaveIndicator() {
+            const indicator = document.getElementById('autoSaveIndicator');
+            indicator.classList.add('show');
+            
+            setTimeout(() => {
+                indicator.classList.remove('show');
+            }, 2000);
         }
         
         function updateAlertsSummary(summary) {
@@ -1531,7 +1973,10 @@ export class UiProvider implements vscode.WebviewViewProvider {
                     break;
                     
                 case 'configSaved':
-                    showMessage(message.message, !message.success);
+                    // Only show full message for manual saves, auto-saves are handled separately
+                    if (!message.isAutoSave) {
+                        showMessage(message.message, !message.success);
+                    }
                     break;
                     
                 case 'connectionTest':
@@ -1545,7 +1990,40 @@ export class UiProvider implements vscode.WebviewViewProvider {
                 case 'scanCompleted':
                     const scanButton = document.getElementById('scanButton');
                     scanButton.disabled = false;
-                    scanButton.textContent = '🔍 Run Local CodeQL Scanner';
+                    scanButton.classList.remove('loading');
+                    
+                    // Add success or error animation
+                    if (message.success) {
+                        scanButton.classList.add('success');
+                        setTimeout(() => scanButton.classList.remove('success'), 600);
+                    } else {
+                        scanButton.classList.add('error');
+                        setTimeout(() => scanButton.classList.remove('error'), 600);
+                    }
+                    
+                    // Reset text and icon
+                    const scanIcon = scanButton.querySelector('.scan-icon');
+                    const scanText = scanButton.querySelector('span:last-child');
+                    
+                    if (message.success) {
+                        scanIcon.textContent = '✅';
+                        scanText.textContent = 'Scan Completed Successfully';
+                        
+                        // Reset to normal state after 3 seconds
+                        setTimeout(() => {
+                            scanIcon.textContent = '🔍';
+                            scanText.textContent = 'Run Local CodeQL Scanner';
+                        }, 3000);
+                    } else {
+                        scanIcon.textContent = '❌';
+                        scanText.textContent = 'Scan Failed';
+                        
+                        // Reset to normal state after 3 seconds
+                        setTimeout(() => {
+                            scanIcon.textContent = '🔍';
+                            scanText.textContent = 'Run Local CodeQL Scanner';
+                        }, 3000);
+                    }
                     
                     stopTimer('scanTimer');
                     
@@ -1566,7 +2044,40 @@ export class UiProvider implements vscode.WebviewViewProvider {
                     const fetchButton = document.getElementById('fetchButton');
                     if (fetchButton) {
                         fetchButton.disabled = false;
-                        fetchButton.textContent = '🔄 Fetch Remote Security Alerts';
+                        fetchButton.classList.remove('loading');
+                        
+                        // Add success or error animation
+                        if (message.success) {
+                            fetchButton.classList.add('success');
+                            setTimeout(() => fetchButton.classList.remove('success'), 600);
+                        } else {
+                            fetchButton.classList.add('error');
+                            setTimeout(() => fetchButton.classList.remove('error'), 600);
+                        }
+                        
+                        // Reset text and icon
+                        const fetchIcon = fetchButton.querySelector('.fetch-icon');
+                        const fetchText = fetchButton.querySelector('span:last-child');
+                        
+                        if (message.success) {
+                            fetchIcon.textContent = '✅';
+                            fetchText.textContent = 'Alerts Fetched Successfully';
+                            
+                            // Reset to normal state after 3 seconds
+                            setTimeout(() => {
+                                fetchIcon.textContent = '🌐';
+                                fetchText.textContent = 'Fetch Remote Security Alerts';
+                            }, 3000);
+                        } else {
+                            fetchIcon.textContent = '❌';
+                            fetchText.textContent = 'Fetch Failed';
+                            
+                            // Reset to normal state after 3 seconds
+                            setTimeout(() => {
+                                fetchIcon.textContent = '🌐';
+                                fetchText.textContent = 'Fetch Remote Security Alerts';
+                            }, 3000);
+                        }
                     }
                     
                     stopTimer('fetchTimer');
