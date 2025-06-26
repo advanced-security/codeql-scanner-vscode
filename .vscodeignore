@@ -1,0 +1,30 @@
+# Source files
+src/**
+tsconfig.json
+.eslintrc.json
+
+# Scripts
+scripts/**
+
+# Git and CI/CD files
+.git/**
+.github/**
+.gitignore
+
+# Development and test files
+.vscode/**
+.vscode-test/**
+**/*.vsix
+**/*.tgz
+node_modules/**
+
+# Documentation files that aren't needed in the extension package
+**/*.md
+!README.md
+!CHANGELOG.md
+!LICENSE
+
+# Build and configuration files
+out/**/*.map
+out/**/*.ts
+out/test/**
