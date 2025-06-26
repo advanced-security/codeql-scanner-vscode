@@ -199,10 +199,13 @@ export class ResultsProvider implements vscode.TreeDataProvider<ResultItem> {
             // Map severity to VS Code diagnostic severity
             const severity = this.mapToVSCodeSeverity(result.severity);
 
-            // Create diagnostic with detailed message
-            const flowInfo = result.flowSteps && result.flowSteps.length > 0 
-                ? ` (${result.flowSteps.length} flow steps)` 
-                : '';
+            // Create diagnostic with detailed message including last flow step info
+            let flowInfo = '';
+            if (result.flowSteps && result.flowSteps.length > 0) {
+                const lastStep = result.flowSteps[result.flowSteps.length - 1];
+                const sinkFile = lastStep.file.split('/').pop() || 'unknown';
+                flowInfo = ` (${result.flowSteps.length} flow steps → ${sinkFile}:${lastStep.startLine})`;
+            }
             const message = `[${result.severity?.toUpperCase()}] ${result.ruleId}: ${result.message}${flowInfo}`;
             const diagnostic = new vscode.Diagnostic(range, message, severity);
             
@@ -212,18 +215,40 @@ export class ResultsProvider implements vscode.TreeDataProvider<ResultItem> {
 
             // Add related information for flow steps
             if (result.flowSteps && result.flowSteps.length > 0) {
-                diagnostic.relatedInformation = result.flowSteps.map((step, index) => {
+                const relatedInfo: vscode.DiagnosticRelatedInformation[] = [];
+                
+                // Add the sink (last step) first for visibility
+                const lastStep = result.flowSteps[result.flowSteps.length - 1];
+                const sinkRange = new vscode.Range(
+                    Math.max(0, lastStep.startLine - 1),
+                    Math.max(0, lastStep.startColumn - 1),
+                    Math.max(0, lastStep.endLine - 1),
+                    Math.max(0, lastStep.endColumn - 1)
+                );
+                relatedInfo.push(new vscode.DiagnosticRelatedInformation(
+                    new vscode.Location(vscode.Uri.file(lastStep.file), sinkRange),
+                    `🎯 Sink (Step ${result.flowSteps.length})${lastStep.message ? `: ${lastStep.message}` : ''}`
+                ));
+
+                // Add all flow steps
+                result.flowSteps.forEach((step, index) => {
                     const stepRange = new vscode.Range(
                         Math.max(0, step.startLine - 1),
                         Math.max(0, step.startColumn - 1),
                         Math.max(0, step.endLine - 1),
                         Math.max(0, step.endColumn - 1)
                     );
-                    return new vscode.DiagnosticRelatedInformation(
+                    const isSource = index === 0;
+                    const isSink = index === result.flowSteps!.length - 1;
+                    const stepLabel = isSource ? '🟢 Source' : isSink ? '🔴 Sink' : '🔵 Step';
+                    
+                    relatedInfo.push(new vscode.DiagnosticRelatedInformation(
                         new vscode.Location(vscode.Uri.file(step.file), stepRange),
-                        `Flow step ${index + 1}${step.message ? `: ${step.message}` : ''}`
-                    );
+                        `${stepLabel} ${index + 1}${step.message ? `: ${step.message}` : ''}`
+                    ));
                 });
+                
+                diagnostic.relatedInformation = relatedInfo;
             }
 
             // Get or create diagnostics array for this file
