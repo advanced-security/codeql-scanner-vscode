@@ -70,6 +70,11 @@
         "category": "CodeQL Scanner"
       },
       {
+        "command": "codeql-scanner.showCodeQLInfo",
+        "title": "CodeQL: Show CLI Information",
+        "category": "CodeQL Scanner"
+      },
+      {
         "command": "codeql-scanner.copyFlowPath",
         "title": "CodeQL: Copy Flow Path",
         "category": "CodeQL Scanner"
@@ -147,6 +152,12 @@
           "description": "Path to the CodeQL CLI executable",
           "scope": "application"
         },
+        "codeql-scanner.autoDetectGitHubExtension": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically detect and use CodeQL CLI from GitHub.vscode-codeql extension if available",
+          "scope": "application"
+        },
         "codeql-scanner.useLocalScan": {
           "type": "boolean",
           "default": true,
@@ -197,6 +208,10 @@
         },
         {
           "command": "codeql-scanner.clearLogs",
+          "when": "workspaceContainsCodeqlConfig || true"
+        },
+        {
+          "command": "codeql-scanner.showCodeQLInfo",
           "when": "workspaceContainsCodeqlConfig || true"
         }
       ],
@@ -264,7 +279,7 @@
     "typescript": "^4.9.4"
   },
   "dependencies": {
-    "@octokit/rest": "^19.0.7",
+    "@octokit/rest": "^22.0.0",
     "@types/js-yaml": "^4.0.9",
     "axios": "^1.3.4",
     "js-yaml": "^4.1.0"
