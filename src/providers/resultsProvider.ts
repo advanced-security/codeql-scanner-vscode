@@ -81,7 +81,24 @@ export class ResultsProvider implements vscode.TreeDataProvider<ResultItem> {
             );
         } else if (element.type === 'language') {
             // Second level - group by severity within language
-            const severityGroups = this.groupBySeverity(element.results!);
+            if (!element.results || element.results.length === 0) {
+                // Show "no results" for this language
+                return Promise.resolve([
+                    new ResultItem(
+                        '✅ No security alerts found',
+                        vscode.TreeItemCollapsibleState.None,
+                        'noResults',
+                        element.language,
+                        undefined,
+                        undefined,
+                        undefined,
+                        undefined,
+                        `No security vulnerabilities were found for ${element.language}`
+                    )
+                ]);
+            }
+            
+            const severityGroups = this.groupBySeverity(element.results);
             const sortedSeverities = this.sortSeverityGroups(severityGroups);
             return Promise.resolve(
                 sortedSeverities.map(([severity, results]) => 
@@ -145,7 +162,12 @@ export class ResultsProvider implements vscode.TreeDataProvider<ResultItem> {
     }
 
     private groupByLanguage(results: ScanResult[]): { [language: string]: ScanResult[] } {
-        return results.reduce((groups, result) => {
+        // Get configured languages from settings
+        const config = vscode.workspace.getConfiguration("codeql-scanner");
+        const configuredLanguages = config.get<string[]>("languages", []);
+        
+        // Start with results grouped by language
+        const groups = results.reduce((groups, result) => {
             const language = result.language || 'unknown';
             if (!groups[language]) {
                 groups[language] = [];
@@ -153,6 +175,15 @@ export class ResultsProvider implements vscode.TreeDataProvider<ResultItem> {
             groups[language].push(result);
             return groups;
         }, {} as { [language: string]: ScanResult[] });
+        
+        // Add configured languages that have no results
+        configuredLanguages.forEach(language => {
+            if (!groups[language]) {
+                groups[language] = [];
+            }
+        });
+        
+        return groups;
     }
 
     private groupBySeverity(results: ScanResult[]): { [severity: string]: ScanResult[] } {
@@ -372,18 +403,34 @@ export class ResultItem extends vscode.TreeItem {
     private getIcon(): vscode.ThemeIcon {
         if (this.type === 'language') {
             switch (this.language) {
-                case 'javascript':
-                    return new vscode.ThemeIcon('symbol-class', new vscode.ThemeColor('symbolIcon.classForeground'));
-                case 'python':
-                    return new vscode.ThemeIcon('symbol-function', new vscode.ThemeColor('symbolIcon.functionForeground'));
-                case 'java':
-                    return new vscode.ThemeIcon('symbol-interface', new vscode.ThemeColor('symbolIcon.interfaceForeground'));
-                case 'csharp':
-                    return new vscode.ThemeIcon('symbol-namespace', new vscode.ThemeColor('symbolIcon.namespaceForeground'));
-                case 'cpp':
-                    return new vscode.ThemeIcon('symbol-struct', new vscode.ThemeColor('symbolIcon.structForeground'));
-                default:
-                    return new vscode.ThemeIcon('file-code');
+            case 'javascript':
+            case 'typescript':
+                return new vscode.ThemeIcon('symbol-class', new vscode.ThemeColor('symbolIcon.classForeground'));
+            case 'python':
+                return new vscode.ThemeIcon('symbol-function', new vscode.ThemeColor('symbolIcon.functionForeground'));
+            case 'java':
+                return new vscode.ThemeIcon('symbol-interface', new vscode.ThemeColor('symbolIcon.interfaceForeground'));
+            case 'csharp':
+                return new vscode.ThemeIcon('symbol-namespace', new vscode.ThemeColor('symbolIcon.namespaceForeground'));
+            case 'cpp':
+            case 'c':
+                return new vscode.ThemeIcon('symbol-struct', new vscode.ThemeColor('symbolIcon.structForeground'));
+            case 'go':
+                return new vscode.ThemeIcon('symbol-module', new vscode.ThemeColor('symbolIcon.moduleForeground'));
+            case 'rust':
+                return new vscode.ThemeIcon('symbol-package', new vscode.ThemeColor('symbolIcon.packageForeground'));
+            case 'ruby':
+                return new vscode.ThemeIcon('symbol-property', new vscode.ThemeColor('symbolIcon.propertyForeground'));
+            case 'php':
+                return new vscode.ThemeIcon('symbol-variable', new vscode.ThemeColor('symbolIcon.variableForeground'));
+            case 'swift':
+                return new vscode.ThemeIcon('symbol-key', new vscode.ThemeColor('symbolIcon.keyForeground'));
+            case 'kotlin':
+                return new vscode.ThemeIcon('symbol-constructor', new vscode.ThemeColor('symbolIcon.constructorForeground'));
+            case 'scala':
+                return new vscode.ThemeIcon('symbol-operator', new vscode.ThemeColor('symbolIcon.operatorForeground'));
+            default:
+                return new vscode.ThemeIcon('file-code');
             }
         } else if (this.type === 'severity') {
             switch (this.severity) {

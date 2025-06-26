@@ -731,7 +731,12 @@ export class CodeQLService {
 
   private getCodeQLDatabase(language: string): string {
     const codeqlDir = this.getCodeQLDirectory();
-    const dbDir = path.join(codeqlDir, "databases", this.getRepositoryName(), language);
+    const dbDir = path.join(
+      codeqlDir,
+      "databases",
+      this.getRepositoryName(),
+      language
+    );
     if (!fs.existsSync(dbDir)) {
       fs.mkdirSync(dbDir, { recursive: true });
     }
@@ -741,8 +746,12 @@ export class CodeQLService {
 
   private getCodeQLConfig(): string {
     const codeqlDir = this.getCodeQLDirectory();
-    const configPath = path.join(codeqlDir, this.getRepositoryName(), "config.yml");
-    return configPath; 
+    const configPath = path.join(
+      codeqlDir,
+      this.getRepositoryName(),
+      "config.yml"
+    );
+    return configPath;
   }
 
   private getCodeQLResults(): string {
@@ -821,15 +830,20 @@ export class CodeQLService {
     const config = vscode.workspace.getConfiguration("codeql-scanner");
     const codeqlPath = config.get<string>("codeqlPath", "codeql");
 
-    const databasePath = this.getCodeQLDatabase(language); 
-    const searchPathArg = searchPaths
-      .map((p) => path.join(workspaceFolder, p))
-      .join(":");
-
+    const databasePath = this.getCodeQLDatabase(language);
     let source = this.getWorkspaceFolder();
 
-    // TODO: We only support BMN
-    const command = `${codeqlPath} database create --overwrite --language ${language} -s "${source}" --build-mode=none --search-path "${searchPathArg}" "${databasePath}"`;
+    var command = `${codeqlPath} database create --overwrite --language ${language} -s "${source}"`;
+    // Add BMN
+    if (language === "cpp" || language === "csharp" || language === "java") {
+        command += ` --build-mode=none`;
+    }
+    command += ` "${databasePath}"`
+
+    this.logger.info(
+      "CodeQLService",
+      `CodeQL Create Command: ${command}`
+    )
 
     try {
       progress.report({ message: `Creating ${language} database...` });
