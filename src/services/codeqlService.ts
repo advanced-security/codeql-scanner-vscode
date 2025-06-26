@@ -50,10 +50,15 @@ export class CodeQLService {
     kotlin: ["kotlin", "kt"],
     scala: ["scala"],
   };
+  private resultsCallback?: (results: ScanResult[]) => void;
 
   constructor(githubService: GitHubService) {
     this.githubService = githubService;
     this.logger = LoggerService.getInstance();
+  }
+
+  public setResultsCallback(callback: (results: ScanResult[]) => void): void {
+    this.resultsCallback = callback;
   }
 
   public async runScan(
@@ -199,6 +204,11 @@ export class CodeQLService {
         language
       );
       results.push(...languageResults);
+
+      // Notify UI immediately with updated results
+      if (this.resultsCallback && languageResults.length > 0) {
+        this.resultsCallback([...results]); // Send a copy of all results so far
+      }
     }
 
     progress.report({ increment: 95, message: "Finalizing results..." });
@@ -238,7 +248,14 @@ export class CodeQLService {
       repoInfo.repo
     );
 
-    return this.convertAlertsToResults(alerts);
+    const results = this.convertAlertsToResults(alerts);
+    
+    // Notify UI immediately when remote results are available
+    if (this.resultsCallback && results.length > 0) {
+      this.resultsCallback(results);
+    }
+
+    return results;
   }
 
   public async initRepository(
@@ -1142,6 +1159,11 @@ export class CodeQLService {
               language
             );
             allResults.push(...results);
+            
+            // Notify UI immediately when SARIF results are loaded
+            if (this.resultsCallback && results.length > 0) {
+              this.resultsCallback([...allResults]); // Send a copy of all results so far
+            }
           } else {
             this.logger.warn(
               "CodeQLService",
@@ -1191,6 +1213,11 @@ export class CodeQLService {
                 language
               );
               allResults.push(...results);
+              
+              // Notify UI immediately when SARIF results are loaded
+              if (this.resultsCallback && results.length > 0) {
+                this.resultsCallback([...allResults]); // Send a copy of all results so far
+              }
             }
           }
 
@@ -1218,6 +1245,11 @@ export class CodeQLService {
               language
             );
             allResults.push(...results);
+            
+            // Notify UI immediately when SARIF results are loaded
+            if (this.resultsCallback && results.length > 0) {
+              this.resultsCallback([...allResults]); // Send a copy of all results so far
+            }
           } else {
             this.logger.debug(
               "CodeQLService",

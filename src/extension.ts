@@ -21,6 +21,14 @@ export async function activate(context: vscode.ExtensionContext) {
     uiProvider.setResultsProvider(resultsProvider);
     uiProvider.setCodeQLService(codeqlService);
 
+    // Set up real-time results callback for immediate UI updates
+    codeqlService.setResultsCallback((results) => {
+        // Update both providers immediately when new results are available
+        resultsProvider.setResults(results);
+        uiProvider.updateScanResults(results);
+        vscode.commands.executeCommand('setContext', 'codeql-scanner.hasResults', results.length > 0);
+    });
+
     // Register webview provider for configuration
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider('codeql-scanner.config', uiProvider)
