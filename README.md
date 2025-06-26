@@ -10,7 +10,7 @@
 [![GitHub Issues](https://img.shields.io/github/issues/geekmasher/codeql-scanner-vscode?style=for-the-badge)][github-issues]
 [![License](https://img.shields.io/github/license/geekmasher/codeql-scanner-vscode?style=for-the-badge)][license]
 
-<div>
+</div>
 <!-- markdownlint-restore -->
 
 ## 🔍 Supercharge Your Code Security with CodeQL
