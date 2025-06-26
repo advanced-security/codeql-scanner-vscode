@@ -93,21 +93,6 @@ export class UiProvider implements vscode.WebviewViewProvider {
 
       await Promise.all([
         workspaceConfig.update(
-          "github.token",
-          config.githubToken,
-          vscode.ConfigurationTarget.Global
-        ),
-        workspaceConfig.update(
-          "github.owner",
-          config.githubOwner,
-          vscode.ConfigurationTarget.Workspace
-        ),
-        workspaceConfig.update(
-          "github.repo",
-          config.githubRepo,
-          vscode.ConfigurationTarget.Workspace
-        ),
-        workspaceConfig.update(
           "suites",
           config.suites,
           vscode.ConfigurationTarget.Workspace
@@ -116,11 +101,6 @@ export class UiProvider implements vscode.WebviewViewProvider {
           "languages",
           config.languages,
           vscode.ConfigurationTarget.Workspace
-        ),
-        workspaceConfig.update(
-          "codeqlPath",
-          config.codeqlPath,
-          vscode.ConfigurationTarget.Global
         ),
         workspaceConfig.update(
           "threatModel",
@@ -2010,20 +1990,22 @@ export class UiProvider implements vscode.WebviewViewProvider {
         const vscode = acquireVsCodeApi();
         
         function saveConfig() {
+            console.log('Saving configuration...');
             const config = {
-                githubToken: document.getElementById('githubToken').value,
-                githubOwner: document.getElementById('githubOwner').value,
-                githubRepo: document.getElementById('githubRepo').value,
                 suites: [getSelectedSuite()],
                 languages: getSelectedLanguages(),
-                codeqlPath: document.getElementById('codeqlPath').value,
                 threatModel: getSelectedThreatModel()
             };
+            
+            console.log('Configuration to save:', config);
             
             vscode.postMessage({
                 command: 'saveConfig',
                 config: config
             });
+            
+            // Show auto-save indicator for automatic saves
+            showAutoSaveIndicator();
         }
 
         function getSelectedSuite() {
@@ -2131,17 +2113,41 @@ export class UiProvider implements vscode.WebviewViewProvider {
                 
                 // Add event listener for automatic configuration saving
                 checkbox.addEventListener('change', function() {
-                    // Auto-save configuration when language selection changes
-                    saveConfig();
-
+                    console.log('Language checkbox changed:', lang, 'checked:', checkbox.checked);
+                    
                     // Update visual state
                     if (checkbox.checked) {
                         checkboxContainer.classList.add('selected');
                     } else {
                         checkboxContainer.classList.remove('selected');
                     }
+                    
+                    // Auto-save configuration when language selection changes
+                    saveConfig();
                 });
                 checkbox.setAttribute('data-listener-attached', 'true');
+                
+                // Add direct event listener to the toggle slider for better UX
+                toggleSlider.addEventListener('click', function(e) {
+                    console.log('Toggle slider clicked for:', lang);
+                    e.preventDefault();
+                    e.stopPropagation();
+                    checkbox.checked = !checkbox.checked;
+                    console.log('Checkbox state changed to:', checkbox.checked);
+                    // Manually trigger the change event which will call saveConfig()
+                    checkbox.dispatchEvent(new Event('change'));
+                });
+                
+                // Also add event listener to the entire toggle container for maximum clickable area
+                toggleContainer.addEventListener('click', function(e) {
+                    console.log('Toggle container clicked for:', lang);
+                    e.preventDefault();
+                    e.stopPropagation();
+                    checkbox.checked = !checkbox.checked;
+                    console.log('Checkbox state changed to:', checkbox.checked, 'via toggle container');
+                    // Manually trigger the change event which will call saveConfig()
+                    checkbox.dispatchEvent(new Event('change'));
+                });
                 
                 const icon = document.createElement('span');
                 icon.className = 'language-icon language-' + lang;
@@ -2151,10 +2157,19 @@ export class UiProvider implements vscode.WebviewViewProvider {
                 label.htmlFor = 'lang-' + lang;
                 label.innerHTML = icon.outerHTML + '<span>' + lang + '</span>';
                 
-                // Make the entire container clickable
+                // Make the entire container clickable, but prevent double events
                 checkboxContainer.addEventListener('click', function(e) {
-                    if (e.target !== checkbox) {
-                        checkbox.click();
+                    console.log('Container clicked for:', lang, 'target:', e.target.className, 'checkbox:', e.target === checkbox, 'toggleSlider:', e.target === toggleSlider);
+                    
+                    // Only trigger click if the target is not the checkbox itself or its toggle components
+                    if (e.target !== checkbox && e.target !== toggleSlider && !toggleContainer.contains(e.target)) {
+                        console.log('Container click triggering checkbox change for:', lang);
+                        e.preventDefault();
+                        checkbox.checked = !checkbox.checked;
+                        // Manually trigger the change event
+                        checkbox.dispatchEvent(new Event('change'));
+                    } else {
+                        console.log('Container click ignored for:', lang, 'due to target being toggle component');
                     }
                 });
                 
