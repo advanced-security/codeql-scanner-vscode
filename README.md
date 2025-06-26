@@ -1,10 +1,17 @@
-# CodeQL Scanner VSCode Extension
+<!-- markdownlint-disable -->
+<div align="center">
+<h1>CodeQL Scanner VSCode Extension</h1>
 
-![CodeQL Scanner](src/assets/VS-marketplace-CodeQL-icon.png)
+<img src="./src/assets/VS-marketplace-CodeQL-icon.png" width="450" title="CodeQL Scanner">
 
-[![Version](https://img.shields.io/visual-studio-marketplace/v/codeql-scanner.codeql-scanner-vscode)](https://marketplace.visualstudio.com/items?itemName=codeql-scanner.codeql-scanner-vscode)
-[![Installs](https://img.shields.io/visual-studio-marketplace/i/codeql-scanner.codeql-scanner-vscode)](https://marketplace.visualstudio.com/items?itemName=codeql-scanner.codeql-scanner-vscode)
-[![License](https://img.shields.io/github/license/geekmasher/codeql-scanner-vscode)](LICENSE)
+[![Version](https://img.shields.io/visual-studio-marketplace/v/GeekMasher.codeql-scanner-vscode)](https://marketplace.visualstudio.com/items?itemName=GeekMasher.codeql-scanner-vscode)
+[![Installs](https://img.shields.io/visual-studio-marketplace/i/GeekMasher.codeql-scanner-vscode)](https://marketplace.visualstudio.com/items?itemName=GeekMasher.codeql-scanner-vscode)
+[![GitHub Stars](https://img.shields.io/github/stars/42ByteLabs/geekorm?style=for-the-badge)][github]
+[![GitHub Issues](https://img.shields.io/github/issues/42ByteLabs/geekorm?style=for-the-badge)][github-issues]
+[![License](https://img.shields.io/github/license/geekmasher/codeql-scanner-vscode)][license]
+
+<div>
+<!-- markdownlint-restore -->
 
 ## 🔍 Supercharge Your Code Security with CodeQL
 
@@ -89,3 +96,9 @@ This project is licensed under the terms specified in the [LICENSE](LICENSE) fil
 ---
 
 Happy Secure Coding! 🔒✨
+
+<!-- Links -->
+
+[github]: https://github.com/geekmasher/codeql-scanner-vscode
+[github-issues]: https://github.com/geekmasher/codeql-scanner-vscode/issues
+[license]: ./LICENSE
