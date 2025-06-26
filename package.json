@@ -2,7 +2,7 @@
   "name": "codeql-scanner-vscode",
   "displayName": "CodeQL Scanner",
   "description": "VSCode extension for CodeQL to scan and analyze code for vulnerabilities using GitHub's CodeQL.",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/geekmasher/codeql-scanner-vscode.git"
@@ -63,6 +63,21 @@
         "command": "codeql-scanner.clearLogs",
         "title": "CodeQL: Clear Logs",
         "category": "CodeQL Scanner"
+      },
+      {
+        "command": "codeql-scanner.clearDiagnostics",
+        "title": "CodeQL: Clear Inline Diagnostics",
+        "category": "CodeQL Scanner"
+      },
+      {
+        "command": "codeql-scanner.copyFlowPath",
+        "title": "CodeQL: Copy Flow Path",
+        "category": "CodeQL Scanner"
+      },
+      {
+        "command": "codeql-scanner.navigateFlowSteps",
+        "title": "CodeQL: Navigate Flow Steps",
+        "category": "CodeQL Scanner"
       }
     ],
     "configuration": {
@@ -102,8 +117,7 @@
             "type": "string"
           },
           "default": [
-            "security-extended",
-            "security-and-quality"
+            "default"
           ],
           "description": "CodeQL query suites to run",
           "scope": "resource"
@@ -190,6 +204,18 @@
         {
           "command": "codeql-scanner.scan",
           "group": "codeql@1"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "codeql-scanner.copyFlowPath",
+          "when": "view == codeql-scanner.results && viewItem == result",
+          "group": "navigation"
+        },
+        {
+          "command": "codeql-scanner.navigateFlowSteps",
+          "when": "view == codeql-scanner.results && viewItem == result",
+          "group": "navigation"
         }
       ]
     },
