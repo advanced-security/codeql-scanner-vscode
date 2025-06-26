@@ -127,6 +127,36 @@ export async function activate(context: vscode.ExtensionContext) {
             } else {
                 vscode.window.showWarningMessage('No flow steps available for this item.');
             }
+        }),
+        vscode.commands.registerCommand('codeql-scanner.resultSelected', async (resultData, uri, options) => {
+            try {
+                const document = await vscode.workspace.openTextDocument(uri);
+                const editor = await vscode.window.showTextDocument(document);
+                
+                if (options && options.selection) {
+                    editor.selection = new vscode.Selection(options.selection.start, options.selection.end);
+                    editor.revealRange(options.selection, vscode.TextEditorRevealType.InCenter);
+                }
+            } catch (error) {
+                const logger = LoggerService.getInstance();
+                logger.error('Command', 'Failed to open file for result', error);
+                vscode.window.showErrorMessage(`Failed to open file: ${error instanceof Error ? error.message : String(error)}`);
+            }
+        }),
+        vscode.commands.registerCommand('codeql-scanner.flowStepSelected', async (flowStepData, uri, options) => {
+            try {
+                const document = await vscode.workspace.openTextDocument(uri);
+                const editor = await vscode.window.showTextDocument(document);
+                
+                if (options && options.selection) {
+                    editor.selection = new vscode.Selection(options.selection.start, options.selection.end);
+                    editor.revealRange(options.selection, vscode.TextEditorRevealType.InCenter);
+                }
+            } catch (error) {
+                const logger = LoggerService.getInstance();
+                logger.error('Command', 'Failed to open file for flow step', error);
+                vscode.window.showErrorMessage(`Failed to open file: ${error instanceof Error ? error.message : String(error)}`);
+            }
         })
     ];
 

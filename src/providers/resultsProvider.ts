@@ -675,11 +675,20 @@ export class ResultItem extends vscode.TreeItem {
         const logger = LoggerService.getInstance();
         
         if (this.type === 'result' && this.result) {
+            // Extract only the necessary properties instead of passing 'this'
+            const resultData = {
+                type: this.type,
+                result: this.result,
+                // Include other necessary properties but avoid circular references
+                language: this.language,
+                severity: this.severity
+            };
+            
             return {
                 command: 'codeql-scanner.resultSelected',
                 title: 'Open File',
                 arguments: [
-                    this,
+                    resultData,
                     vscode.Uri.file(this.result.location.file),
                     {
                         selection: new vscode.Range(
@@ -692,11 +701,18 @@ export class ResultItem extends vscode.TreeItem {
                 ]
             };
         } else if (this.type === 'flowStep' && this.flowStep) {
+            // Extract only the necessary properties instead of passing 'this'
+            const flowStepData = {
+                type: this.type,
+                flowStep: this.flowStep,
+                result: this.result
+            };
+            
             return {
                 command: 'codeql-scanner.flowStepSelected',
                 title: 'Open Flow Step',
                 arguments: [
-                    this,
+                    flowStepData,
                     vscode.Uri.file(this.flowStep.file),
                     {
                         selection: new vscode.Range(

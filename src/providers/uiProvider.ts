@@ -301,78 +301,6 @@ export class UiProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private async autoLoadLanguagesIfNeeded() {
-    this.logger.logServiceCall(
-      "UiProvider",
-      "autoLoadLanguagesIfNeeded",
-      "started"
-    );
-
-    try {
-      // Check if languages are already configured
-      const config = vscode.workspace.getConfiguration("codeql-scanner");
-      const configuredLanguages = config.get<string[]>("languages", []);
-
-      if (configuredLanguages.length > 0) {
-        this.logger.debug(
-          "UiProvider",
-          `Languages already configured: ${configuredLanguages.join(", ")}`
-        );
-        return;
-      }
-
-      // If no CodeQL service is available, can't auto-load
-      if (!this._codeqlService) {
-        this.logger.debug(
-          "UiProvider",
-          "CodeQL service not available for auto-loading languages"
-        );
-        return;
-      }
-
-      this.logger.info(
-        "UiProvider",
-        "No languages configured, attempting to auto-load supported languages"
-      );
-
-      // Try to get supported languages from CodeQL CLI
-      await this._codeqlService.getSupportedLanguages();
-      const supportedLanguages = this._codeqlService.getLanguages();
-
-      if (supportedLanguages.length > 0) {
-        this.logger.info(
-          "UiProvider",
-          `Auto-loaded ${
-            supportedLanguages.length
-          } supported languages: ${supportedLanguages.join(", ")}`
-        );
-
-        // Send the languages to the webview for display
-        this._view?.webview.postMessage({
-          command: "supportedLanguagesLoaded",
-          success: true,
-          languages: supportedLanguages,
-          message: `Auto-loaded ${supportedLanguages.length} supported languages`,
-        });
-
-        this.logger.logServiceCall(
-          "UiProvider",
-          "autoLoadLanguagesIfNeeded",
-          "completed",
-          { languageCount: supportedLanguages.length }
-        );
-      } else {
-        this.logger.warn(
-          "UiProvider",
-          "No supported languages found during auto-load"
-        );
-      }
-    } catch (error) {
-      this.logger.warn("UiProvider", "Failed to auto-load languages", error);
-      // Don't show error to user for auto-loading, just log it
-    }
-  }
-
   private async autoSelectGitHubLanguages(): Promise<string[]> {
     this.logger.logServiceCall(
       "UiProvider",
@@ -570,7 +498,9 @@ export class UiProvider implements vscode.WebviewViewProvider {
         message:
           alert.message?.text || alert.rule?.description || "No description",
         location: {
-          file: alert.most_recent_instance?.location?.path || "unknown",
+          file: alert.most_recent_instance?.location?.path 
+            ? path.join(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "", alert.most_recent_instance.location.path)
+            : "unknown",
           startLine: alert.most_recent_instance?.location?.start_line || 1,
           startColumn: alert.most_recent_instance?.location?.start_column || 1,
           endLine: alert.most_recent_instance?.location?.end_line || 1,
