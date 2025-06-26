@@ -1,13 +1,17 @@
 import * as vscode from 'vscode';
-import { ScanResult } from '../services/codeqlService';
+import { ScanResult, FlowStep } from '../services/codeqlService';
 
 export class ResultsProvider implements vscode.TreeDataProvider<ResultItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<ResultItem | undefined | null | void> = new vscode.EventEmitter<ResultItem | undefined | null | void>();
     readonly onDidChangeTreeData: vscode.Event<ResultItem | undefined | null | void> = this._onDidChangeTreeData.event;
 
     private results: ScanResult[] = [];
+    private diagnosticCollection: vscode.DiagnosticCollection;
 
-    constructor() {}
+    constructor() {
+        // Create a diagnostic collection for CodeQL security issues
+        this.diagnosticCollection = vscode.languages.createDiagnosticCollection('codeql-security');
+    }
 
     refresh(): void {
         this._onDidChangeTreeData.fire();
@@ -15,11 +19,18 @@ export class ResultsProvider implements vscode.TreeDataProvider<ResultItem> {
 
     setResults(results: ScanResult[]): void {
         this.results = results;
+        this.updateDiagnostics(results);
         this.refresh();
     }
 
     getResults(): ScanResult[] {
         return this.results;
+    }
+
+    clearResults(): void {
+        this.results = [];
+        this.diagnosticCollection.clear();
+        this.refresh();
     }
 
     getTreeItem(element: ResultItem): vscode.TreeItem {
@@ -64,13 +75,42 @@ export class ResultsProvider implements vscode.TreeDataProvider<ResultItem> {
                 element.results!.map(result => 
                     new ResultItem(
                         `${result.ruleId}: ${result.message}`,
-                        vscode.TreeItemCollapsibleState.None,
+                        result.flowSteps && result.flowSteps.length > 0 
+                            ? vscode.TreeItemCollapsibleState.Collapsed 
+                            : vscode.TreeItemCollapsibleState.None,
                         'result',
                         element.language,
                         undefined,
                         result
                     )
                 )
+            );
+        } else if (element.type === 'result' && element.result?.flowSteps) {
+            // Fourth level - flow steps (hidden by default)
+            const flowSteps = element.result.flowSteps;
+            return Promise.resolve(
+                flowSteps.map((step, index) => {
+                    const isSource = index === 0;
+                    const isSink = index === flowSteps.length - 1;
+                    const stepType = isSource ? 'Source' : isSink ? 'Sink' : 'Step';
+                    const fileName = step.file.split('/').pop() || 'unknown';
+                    
+                    let label = `${stepType} ${index + 1}: ${fileName}:${step.startLine}`;
+                    if (step.message) {
+                        label += ` - ${step.message}`;
+                    }
+                    
+                    return new ResultItem(
+                        label,
+                        vscode.TreeItemCollapsibleState.None,
+                        'flowStep',
+                        element.language,
+                        undefined,
+                        element.result,
+                        undefined,
+                        step
+                    );
+                })
             );
         }
 
@@ -128,17 +168,112 @@ export class ResultsProvider implements vscode.TreeDataProvider<ResultItem> {
             return aIndex - bIndex;
         });
     }
+
+    private updateDiagnostics(results: ScanResult[]): void {
+        // Clear existing diagnostics
+        this.diagnosticCollection.clear();
+
+        if (!results || results.length === 0) {
+            return;
+        }
+
+        // Group diagnostics by file URI
+        const diagnosticsMap = new Map<string, vscode.Diagnostic[]>();
+
+        results.forEach(result => {
+            if (!result.location || !result.location.file) {
+                return;
+            }
+
+            const fileUri = vscode.Uri.file(result.location.file);
+            const uriString = fileUri.toString();
+
+            // Create a range for the diagnostic with bounds checking
+            const startLine = Math.max(0, (result.location.startLine || 1) - 1);
+            const startColumn = Math.max(0, (result.location.startColumn || 1) - 1);
+            const endLine = Math.max(startLine, (result.location.endLine || result.location.startLine || 1) - 1);
+            const endColumn = Math.max(startColumn + 1, (result.location.endColumn || result.location.startColumn || 1) - 1);
+
+            const range = new vscode.Range(startLine, startColumn, endLine, endColumn);
+
+            // Map severity to VS Code diagnostic severity
+            const severity = this.mapToVSCodeSeverity(result.severity);
+
+            // Create diagnostic with detailed message
+            const flowInfo = result.flowSteps && result.flowSteps.length > 0 
+                ? ` (${result.flowSteps.length} flow steps)` 
+                : '';
+            const message = `[${result.severity?.toUpperCase()}] ${result.ruleId}: ${result.message}${flowInfo}`;
+            const diagnostic = new vscode.Diagnostic(range, message, severity);
+            
+            // Add additional information to the diagnostic
+            diagnostic.source = 'CodeQL Security Scanner';
+            diagnostic.code = result.ruleId;
+
+            // Add related information for flow steps
+            if (result.flowSteps && result.flowSteps.length > 0) {
+                diagnostic.relatedInformation = result.flowSteps.map((step, index) => {
+                    const stepRange = new vscode.Range(
+                        Math.max(0, step.startLine - 1),
+                        Math.max(0, step.startColumn - 1),
+                        Math.max(0, step.endLine - 1),
+                        Math.max(0, step.endColumn - 1)
+                    );
+                    return new vscode.DiagnosticRelatedInformation(
+                        new vscode.Location(vscode.Uri.file(step.file), stepRange),
+                        `Flow step ${index + 1}${step.message ? `: ${step.message}` : ''}`
+                    );
+                });
+            }
+
+            // Get or create diagnostics array for this file
+            let fileDiagnostics = diagnosticsMap.get(uriString);
+            if (!fileDiagnostics) {
+                fileDiagnostics = [];
+                diagnosticsMap.set(uriString, fileDiagnostics);
+            }
+
+            fileDiagnostics.push(diagnostic);
+        });
+
+        // Set diagnostics for each file
+        diagnosticsMap.forEach((diagnostics, uriString) => {
+            this.diagnosticCollection.set(vscode.Uri.parse(uriString), diagnostics);
+        });
+    }
+
+    private mapToVSCodeSeverity(severity: string): vscode.DiagnosticSeverity {
+        switch (severity?.toLowerCase()) {
+            case 'critical':
+            case 'high':
+            case 'error':
+                return vscode.DiagnosticSeverity.Error;
+            case 'medium':
+            case 'warning':
+                return vscode.DiagnosticSeverity.Warning;
+            case 'low':
+            case 'info':
+                return vscode.DiagnosticSeverity.Information;
+            default:
+                return vscode.DiagnosticSeverity.Warning;
+        }
+    }
+
+    dispose(): void {
+        this.diagnosticCollection.dispose();
+    }
 }
 
 export class ResultItem extends vscode.TreeItem {
     constructor(
         public readonly label: string,
         public readonly collapsibleState: vscode.TreeItemCollapsibleState,
-        public readonly type: 'language' | 'severity' | 'result',
+        public readonly type: 'language' | 'severity' | 'result' | 'flowStep',
         public readonly language?: string,
         public readonly results?: ScanResult[],
         public readonly result?: ScanResult,
-        public readonly severity?: string
+        public readonly severity?: string,
+        public readonly flowStep?: FlowStep
     ) {
         super(label, collapsibleState);
 
@@ -154,15 +289,24 @@ export class ResultItem extends vscode.TreeItem {
             return `${this.results?.length || 0} ${this.language} language issues`;
         } else if (this.type === 'severity') {
             return `${this.results?.length || 0} ${this.severity} severity issues in ${this.language}`;
-        } else if (this.result) {
-            return `${this.result.ruleId}: ${this.result.message}\\nFile: ${this.result.location.file}\\nLine: ${this.result.location.startLine}`;
+        } else if (this.type === 'result' && this.result) {
+            const flowInfo = this.result.flowSteps && this.result.flowSteps.length > 0 
+                ? `\\nFlow steps: ${this.result.flowSteps.length}` 
+                : '';
+            return `${this.result.ruleId}: ${this.result.message}\\nFile: ${this.result.location.file}\\nLine: ${this.result.location.startLine}${flowInfo}`;
+        } else if (this.type === 'flowStep' && this.flowStep) {
+            return `Flow step ${this.flowStep.stepIndex + 1}\\nFile: ${this.flowStep.file}\\nLine: ${this.flowStep.startLine}${this.flowStep.message ? `\\nMessage: ${this.flowStep.message}` : ''}`;
         }
         return this.label;
     }
 
     private getDescription(): string {
         if (this.type === 'result' && this.result) {
-            return `${this.result.location.file}:${this.result.location.startLine}`;
+            const flowCount = this.result.flowSteps?.length || 0;
+            const baseDesc = `${this.result.location.file}:${this.result.location.startLine}`;
+            return flowCount > 0 ? `${baseDesc} (${flowCount} steps)` : baseDesc;
+        } else if (this.type === 'flowStep' && this.flowStep) {
+            return `${this.flowStep.file}:${this.flowStep.startLine}`;
         }
         return '';
     }
@@ -215,6 +359,15 @@ export class ResultItem extends vscode.TreeItem {
                 default:
                     return new vscode.ThemeIcon('circle-filled');
             }
+        } else if (this.type === 'flowStep') {
+            // Use different icons based on step index to show flow progression
+            if (this.flowStep?.stepIndex === 0) {
+                return new vscode.ThemeIcon('play', new vscode.ThemeColor('charts.green')); // Source
+            } else if (this.flowStep && this.result?.flowSteps && this.flowStep.stepIndex === this.result.flowSteps.length - 1) {
+                return new vscode.ThemeIcon('target', new vscode.ThemeColor('charts.red')); // Sink
+            } else {
+                return new vscode.ThemeIcon('arrow-right', new vscode.ThemeColor('charts.blue')); // Intermediate step
+            }
         }
         return new vscode.ThemeIcon('circle-outline');
     }
@@ -232,6 +385,22 @@ export class ResultItem extends vscode.TreeItem {
                             this.result.location.startColumn - 1,
                             this.result.location.endLine - 1,
                             this.result.location.endColumn - 1
+                        )
+                    }
+                ]
+            };
+        } else if (this.type === 'flowStep' && this.flowStep) {
+            return {
+                command: 'vscode.open',
+                title: 'Open Flow Step',
+                arguments: [
+                    vscode.Uri.file(this.flowStep.file),
+                    {
+                        selection: new vscode.Range(
+                            this.flowStep.startLine - 1,
+                            this.flowStep.startColumn - 1,
+                            this.flowStep.endLine - 1,
+                            this.flowStep.endColumn - 1
                         )
                     }
                 ]

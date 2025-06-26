@@ -56,11 +56,77 @@ export async function activate(context: vscode.ExtensionContext) {
         }),
         vscode.commands.registerCommand('codeql-scanner.reloadSARIF', async () => {
             await autoLoadExistingSARIFFiles(codeqlService, resultsProvider, uiProvider);
+        }),
+        vscode.commands.registerCommand('codeql-scanner.clearDiagnostics', () => {
+            resultsProvider.clearResults();
+            vscode.window.showInformationMessage('CodeQL diagnostics cleared.');
+        }),
+        vscode.commands.registerCommand('codeql-scanner.copyFlowPath', async (item) => {
+            if (item && item.result && item.result.flowSteps) {
+                const flowPath = item.result.flowSteps.map((step: any, index: number) => {
+                    const stepType = index === 0 ? 'Source' : 
+                                   index === item.result.flowSteps.length - 1 ? 'Sink' : 'Step';
+                    return `${stepType} ${index + 1}: ${step.file}:${step.startLine}${step.message ? ` - ${step.message}` : ''}`;
+                }).join('\n');
+                
+                await vscode.env.clipboard.writeText(flowPath);
+                vscode.window.showInformationMessage('Flow path copied to clipboard!');
+            } else {
+                vscode.window.showWarningMessage('No flow path available for this item.');
+            }
+        }),
+        vscode.commands.registerCommand('codeql-scanner.navigateFlowSteps', async (item) => {
+            if (item && item.result && item.result.flowSteps && item.result.flowSteps.length > 0) {
+                const flowSteps = item.result.flowSteps;
+                
+                // Create quick pick items for each flow step
+                interface FlowStepQuickPickItem extends vscode.QuickPickItem {
+                    stepData: any;
+                }
+                
+                const quickPickItems: FlowStepQuickPickItem[] = flowSteps.map((step: any, index: number) => {
+                    const stepType = index === 0 ? 'Source' : 
+                                   index === flowSteps.length - 1 ? 'Sink' : 'Step';
+                    const fileName = step.file.split('/').pop() || 'unknown';
+                    
+                    return {
+                        label: `${stepType} ${index + 1}: ${fileName}:${step.startLine}`,
+                        description: step.message || '',
+                        detail: step.file,
+                        stepData: step
+                    };
+                });
+                
+                const selected = await vscode.window.showQuickPick(quickPickItems, {
+                    placeHolder: 'Select a flow step to navigate to'
+                });
+                
+                if (selected && selected.stepData) {
+                    const step = selected.stepData;
+                    const document = await vscode.workspace.openTextDocument(step.file);
+                    const editor = await vscode.window.showTextDocument(document);
+                    
+                    const range = new vscode.Range(
+                        step.startLine - 1,
+                        step.startColumn - 1,
+                        step.endLine - 1,
+                        step.endColumn - 1
+                    );
+                    
+                    editor.selection = new vscode.Selection(range.start, range.end);
+                    editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
+                }
+            } else {
+                vscode.window.showWarningMessage('No flow steps available for this item.');
+            }
         })
     ];
 
     context.subscriptions.push(...commands);
 
+    // Register providers for disposal
+    context.subscriptions.push(resultsProvider);
+    
     // Register logger disposal
     context.subscriptions.push({
         dispose: () => {
@@ -121,9 +187,13 @@ async function handleCommand(
                             uiProvider.updateScanResults(results);
                         }
                         vscode.commands.executeCommand('setContext', 'codeql-scanner.hasResults', true);
-                    } else if (uiProvider) {
-                        // Update UI provider with empty results
-                        uiProvider.updateScanResults([]);
+                    } else {
+                        // Clear existing results and diagnostics
+                        resultsProvider.clearResults();
+                        if (uiProvider) {
+                            uiProvider.updateScanResults([]);
+                        }
+                        vscode.commands.executeCommand('setContext', 'codeql-scanner.hasResults', false);
                     }
                     break;
                 case 'init':

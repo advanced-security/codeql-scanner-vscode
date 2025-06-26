@@ -10,6 +10,16 @@ import * as os from "os";
 
 const execAsync = promisify(exec);
 
+export interface FlowStep {
+  file: string;
+  startLine: number;
+  startColumn: number;
+  endLine: number;
+  endColumn: number;
+  message?: string;
+  stepIndex: number;
+}
+
 export interface ScanResult {
   ruleId: string;
   severity: string;
@@ -22,6 +32,7 @@ export interface ScanResult {
     endLine: number;
     endColumn: number;
   };
+  flowSteps?: FlowStep[]; // Data flow steps from source to sink
 }
 
 export class CodeQLService {
@@ -450,18 +461,42 @@ export class CodeQLService {
   }
 
   private convertAlertsToResults(alerts: any[]): ScanResult[] {
-    return alerts.map((alert) => ({
-      ruleId: alert.rule.id,
-      severity: alert.rule.severity,
-      message: alert.message.text,
-      location: {
-        file: alert.most_recent_instance.location.path,
-        startLine: alert.most_recent_instance.location.start_line,
-        startColumn: alert.most_recent_instance.location.start_column,
-        endLine: alert.most_recent_instance.location.end_line,
-        endColumn: alert.most_recent_instance.location.end_column,
-      },
-    }));
+    return alerts.map((alert) => {
+      // Extract flow steps if available from GitHub API
+      const flowSteps: FlowStep[] = [];
+      if (alert.instances && alert.instances.length > 0) {
+        const instance = alert.instances[0];
+        if (instance.flow && instance.flow.locations) {
+          instance.flow.locations.forEach((flowLocation: any, index: number) => {
+            if (flowLocation.location) {
+              flowSteps.push({
+                file: flowLocation.location.path,
+                startLine: flowLocation.location.start_line,
+                startColumn: flowLocation.location.start_column,
+                endLine: flowLocation.location.end_line,
+                endColumn: flowLocation.location.end_column,
+                message: flowLocation.message,
+                stepIndex: index
+              });
+            }
+          });
+        }
+      }
+
+      return {
+        ruleId: alert.rule.id,
+        severity: alert.rule.severity,
+        message: alert.message.text,
+        location: {
+          file: alert.most_recent_instance.location.path,
+          startLine: alert.most_recent_instance.location.start_line,
+          startColumn: alert.most_recent_instance.location.start_column,
+          endLine: alert.most_recent_instance.location.end_line,
+          endColumn: alert.most_recent_instance.location.end_column,
+        },
+        flowSteps: flowSteps.length > 0 ? flowSteps : undefined,
+      };
+    });
   }
 
   private async createCodeQLConfig(repoInfo: RepositoryInfo): Promise<void> {
@@ -875,6 +910,37 @@ export class CodeQLService {
         );
         const region = physicalLocation.region || {};
 
+        // Extract flow steps from codeFlows if available
+        const flowSteps: FlowStep[] = [];
+        if (result.codeFlows && result.codeFlows.length > 0) {
+          const codeFlow = result.codeFlows[0]; // Take the first code flow
+          if (codeFlow.threadFlows && codeFlow.threadFlows.length > 0) {
+            const threadFlow = codeFlow.threadFlows[0]; // Take the first thread flow
+            if (threadFlow.locations) {
+              threadFlow.locations.forEach((flowLocation: any, index: number) => {
+                const flowPhysicalLocation = flowLocation.location?.physicalLocation;
+                if (flowPhysicalLocation && flowPhysicalLocation.artifactLocation) {
+                  const flowFilePath = path.resolve(
+                    workspaceFolder,
+                    flowPhysicalLocation.artifactLocation.uri
+                  );
+                  const flowRegion = flowPhysicalLocation.region || {};
+                  
+                  flowSteps.push({
+                    file: flowFilePath,
+                    startLine: flowRegion.startLine || 1,
+                    startColumn: flowRegion.startColumn || 1,
+                    endLine: flowRegion.endLine || flowRegion.startLine || 1,
+                    endColumn: flowRegion.endColumn || flowRegion.startColumn || 1,
+                    message: flowLocation.message?.text,
+                    stepIndex: index
+                  });
+                }
+              });
+            }
+          }
+        }
+
         results.push({
           ruleId: result.ruleId || "unknown",
           severity: severity,
@@ -887,6 +953,7 @@ export class CodeQLService {
             endLine: region.endLine || region.startLine || 1,
             endColumn: region.endColumn || region.startColumn || 1,
           },
+          flowSteps: flowSteps.length > 0 ? flowSteps : undefined,
         });
       }
     }
