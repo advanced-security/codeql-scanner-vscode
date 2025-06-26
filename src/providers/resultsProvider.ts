@@ -7,6 +7,7 @@ export class ResultsProvider implements vscode.TreeDataProvider<ResultItem> {
 
     private results: ScanResult[] = [];
     private diagnosticCollection: vscode.DiagnosticCollection;
+    private hasBeenScanned: boolean = false;
 
     constructor() {
         // Create a diagnostic collection for CodeQL security issues
@@ -19,6 +20,7 @@ export class ResultsProvider implements vscode.TreeDataProvider<ResultItem> {
 
     setResults(results: ScanResult[]): void {
         this.results = results;
+        this.hasBeenScanned = true;
         this.updateDiagnostics(results);
         this.refresh();
     }
@@ -29,6 +31,7 @@ export class ResultsProvider implements vscode.TreeDataProvider<ResultItem> {
 
     clearResults(): void {
         this.results = [];
+        this.hasBeenScanned = false;
         this.diagnosticCollection.clear();
         this.refresh();
     }
@@ -40,6 +43,30 @@ export class ResultsProvider implements vscode.TreeDataProvider<ResultItem> {
     getChildren(element?: ResultItem): Thenable<ResultItem[]> {
         if (!element) {
             // Root level - group by language
+            if (!this.results || this.results.length === 0) {
+                // Show different messages based on whether a scan has been run
+                const message = this.hasBeenScanned 
+                    ? '✅ No security alerts found'
+                    : '🔍 Run a CodeQL scan to see security alerts';
+                const tooltip = this.hasBeenScanned
+                    ? 'No security vulnerabilities were found in the scanned code'
+                    : 'Click "CodeQL: Run Scan" to analyze your code for security vulnerabilities';
+                
+                return Promise.resolve([
+                    new ResultItem(
+                        message,
+                        vscode.TreeItemCollapsibleState.None,
+                        'noResults',
+                        undefined,
+                        undefined,
+                        undefined,
+                        undefined,
+                        undefined,
+                        tooltip
+                    )
+                ]);
+            }
+            
             const groups = this.groupByLanguage(this.results);
             return Promise.resolve(
                 Object.entries(groups).map(([language, results]) => 
@@ -293,12 +320,13 @@ export class ResultItem extends vscode.TreeItem {
     constructor(
         public readonly label: string,
         public readonly collapsibleState: vscode.TreeItemCollapsibleState,
-        public readonly type: 'language' | 'severity' | 'result' | 'flowStep',
+        public readonly type: 'language' | 'severity' | 'result' | 'flowStep' | 'noResults',
         public readonly language?: string,
         public readonly results?: ScanResult[],
         public readonly result?: ScanResult,
         public readonly severity?: string,
-        public readonly flowStep?: FlowStep
+        public readonly flowStep?: FlowStep,
+        private readonly customTooltip?: string
     ) {
         super(label, collapsibleState);
 
@@ -310,6 +338,9 @@ export class ResultItem extends vscode.TreeItem {
     }
 
     private getTooltip(): string {
+        if (this.customTooltip) {
+            return this.customTooltip;
+        }
         if (this.type === 'language') {
             return `${this.results?.length || 0} ${this.language} language issues`;
         } else if (this.type === 'severity') {
@@ -321,6 +352,8 @@ export class ResultItem extends vscode.TreeItem {
             return `${this.result.ruleId}: ${this.result.message}\\nFile: ${this.result.location.file}\\nLine: ${this.result.location.startLine}${flowInfo}`;
         } else if (this.type === 'flowStep' && this.flowStep) {
             return `Flow step ${this.flowStep.stepIndex + 1}\\nFile: ${this.flowStep.file}\\nLine: ${this.flowStep.startLine}${this.flowStep.message ? `\\nMessage: ${this.flowStep.message}` : ''}`;
+        } else if (this.type === 'noResults') {
+            return 'No security vulnerabilities were found in the scanned code';
         }
         return this.label;
     }
@@ -392,6 +425,13 @@ export class ResultItem extends vscode.TreeItem {
                 return new vscode.ThemeIcon('target', new vscode.ThemeColor('charts.red')); // Sink
             } else {
                 return new vscode.ThemeIcon('arrow-right', new vscode.ThemeColor('charts.blue')); // Intermediate step
+            }
+        } else if (this.type === 'noResults') {
+            // Use different icons based on whether scan has been run
+            if (this.label.includes('No security alerts found')) {
+                return new vscode.ThemeIcon('check-all', new vscode.ThemeColor('charts.green'));
+            } else {
+                return new vscode.ThemeIcon('search', new vscode.ThemeColor('charts.blue'));
             }
         }
         return new vscode.ThemeIcon('circle-outline');
