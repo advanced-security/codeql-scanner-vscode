@@ -4,11 +4,11 @@
 
 <img src="./src/assets/VS-marketplace-CodeQL-icon.png" width="450" title="CodeQL Scanner">
 
-[![Version](https://img.shields.io/visual-studio-marketplace/v/GeekMasher.codeql-scanner-vscode)](https://marketplace.visualstudio.com/items?itemName=GeekMasher.codeql-scanner-vscode)
-[![Installs](https://img.shields.io/visual-studio-marketplace/i/GeekMasher.codeql-scanner-vscode)](https://marketplace.visualstudio.com/items?itemName=GeekMasher.codeql-scanner-vscode)
+[![Version](https://img.shields.io/visual-studio-marketplace/v/GeekMasher.codeql-scanner-vscode?style=for-the-badge)](https://marketplace.visualstudio.com/items?itemName=GeekMasher.codeql-scanner-vscode)
+[![Installs](https://img.shields.io/visual-studio-marketplace/i/GeekMasher.codeql-scanner-vscode?style=for-the-badge)](https://marketplace.visualstudio.com/items?itemName=GeekMasher.codeql-scanner-vscode)
 [![GitHub Stars](https://img.shields.io/github/stars/geekmasher/codeql-scanner-vscode?style=for-the-badge)][github]
 [![GitHub Issues](https://img.shields.io/github/issues/geekmasher/codeql-scanner-vscode?style=for-the-badge)][github-issues]
-[![License](https://img.shields.io/github/license/geekmasher/codeql-scanner-vscode)][license]
+[![License](https://img.shields.io/github/license/geekmasher/codeql-scanner-vscode?style=for-the-badge)][license]
 
 <div>
 <!-- markdownlint-restore -->
