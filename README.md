@@ -2,7 +2,7 @@
 <div align="center">
 <h1>CodeQL Scanner VSCode Extension</h1>
 
-<img src="./src/assets/VS-marketplace-CodeQL-icon.png" width="450" title="CodeQL Scanner">
+<img src="./src/assets/VS-marketplace-CodeQL-icon.png" width="250" title="CodeQL Scanner">
 
 [![Version](https://img.shields.io/visual-studio-marketplace/v/GeekMasher.codeql-scanner-vscode?style=for-the-badge)](https://marketplace.visualstudio.com/items?itemName=GeekMasher.codeql-scanner-vscode)
 [![Installs](https://img.shields.io/visual-studio-marketplace/i/GeekMasher.codeql-scanner-vscode?style=for-the-badge)](https://marketplace.visualstudio.com/items?itemName=GeekMasher.codeql-scanner-vscode)
