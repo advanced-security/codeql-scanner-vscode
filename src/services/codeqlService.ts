@@ -980,6 +980,7 @@ export class CodeQLService {
         }
       }
     }
+    return `codeql/${language}-queries`; // Fallback to default pack
   }
 
   private parseSARIFResults(
