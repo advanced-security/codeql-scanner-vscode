@@ -34,6 +34,18 @@ Seamlessly integrate GitHub's powerful CodeQL scanning engine directly into your
 3. Open any code repository
 4. Run a scan using the command palette (`Ctrl+Shift+P` or `Cmd+Shift+P`): `CodeQL: Run Scan`
 
+## 📋 Prerequisites
+
+- **CodeQL CLI**: The extension requires the [CodeQL CLI](https://github.com/github/codeql-cli-binaries/releases) to be installed and available on your system PATH
+  - Download the latest release for your platform from the [CodeQL CLI releases page](https://github.com/github/codeql-cli-binaries/releases)
+  - Extract the archive and add the `codeql` binary to your system PATH
+  - Verify installation by running `codeql --version` in your terminal
+
+- **GitHub Personal Access Token**: For GitHub integration features, a GitHub token with appropriate permissions is required
+  - Create a token at [GitHub Settings > Developer settings > Personal access tokens](https://github.com/settings/tokens)
+  - Required permissions: `repo`, `read:org` (for organization repositories), `security_events` (for security alerts)
+  - Store the token securely in your extension settings
+
 ## 📋 Available Commands
 
 | Command | Description |
