@@ -183,7 +183,7 @@ export class UiProvider implements vscode.WebviewViewProvider {
       githubOwner: config.get<string>("github.owner", ""),
       githubRepo: config.get<string>("github.repo", ""),
       githubLanguages: config.get<string[]>("github.languages", []),
-      suites: config.get<string[]>("suites", ["code-scanning"]),
+      suites: config.get<string[]>("suites", ["default"]),
       languages: languages,
       codeqlPath: config.get<string>("codeqlPath", "codeql"),
       threatModel: threatModel,
@@ -1911,8 +1911,8 @@ export class UiProvider implements vscode.WebviewViewProvider {
             <label for="suites">Query Suite:</label>
             <div id="suitesContainer">
                 <div class="suite-radio">
-                    <input type="radio" id="suite-code-scanning" name="suite" value="code-scanning">
-                    <label for="suite-code-scanning">
+                    <input type="radio" id="suite-default" name="suite" value="default">
+                    <label for="suite-default">
                         <span class="suite-name">Default</span>
                         <span class="suite-description">Basic code scanning queries for CI/CD</span>
                     </label>
@@ -2010,7 +2010,7 @@ export class UiProvider implements vscode.WebviewViewProvider {
 
         function getSelectedSuite() {
             const selectedRadio = document.querySelector('input[name="suite"]:checked');
-            return selectedRadio ? selectedRadio.value : 'code-scanning';
+            return selectedRadio ? selectedRadio.value : 'default';
         }
 
         function setSelectedSuite(suite) {
@@ -2018,8 +2018,8 @@ export class UiProvider implements vscode.WebviewViewProvider {
             if (radioButton) {
                 radioButton.checked = true;
             } else {
-                // Default to code-scanning if suite not found
-                const defaultRadio = document.querySelector('input[name="suite"][value="code-scanning"]');
+                // Default to default if suite not found
+                const defaultRadio = document.querySelector('input[name="suite"][value="default"]');
                 if (defaultRadio) defaultRadio.checked = true;
             }
 
@@ -2371,8 +2371,8 @@ export class UiProvider implements vscode.WebviewViewProvider {
                     const config = message.config;
                     console.log('Configuration loaded:', config);
                     
-                    // Set selected suite (take first suite if multiple, default to code-scanning)
-                    const selectedSuite = config.suites && config.suites.length > 0 ? config.suites[0] : 'code-scanning';
+                    // Set selected suite (take first suite if multiple, default to default)
+                    const selectedSuite = config.suites && config.suites.length > 0 ? config.suites[0] : 'default';
                     setSelectedSuite(selectedSuite);
                     
                     // Set selected threat model (default to Remote)
@@ -2568,7 +2568,7 @@ export class UiProvider implements vscode.WebviewViewProvider {
         setTimeout(() => {
             // Ensure a suite is always selected
             if (!document.querySelector('input[name="suite"]:checked')) {
-                const defaultSuite = document.querySelector('input[name="suite"][value="code-scanning"]');
+                const defaultSuite = document.querySelector('input[name="suite"][value="default"]');
                 if (defaultSuite) defaultSuite.checked = true;
             }
             

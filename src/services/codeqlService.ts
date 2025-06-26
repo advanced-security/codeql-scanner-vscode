@@ -836,14 +836,11 @@ export class CodeQLService {
     var command = `${codeqlPath} database create --overwrite --language ${language} -s "${source}"`;
     // Add BMN
     if (language === "cpp" || language === "csharp" || language === "java") {
-        command += ` --build-mode=none`;
+      command += ` --build-mode=none`;
     }
-    command += ` "${databasePath}"`
+    command += ` "${databasePath}"`;
 
-    this.logger.info(
-      "CodeQLService",
-      `CodeQL Create Command: ${command}`
-    )
+    this.logger.info("CodeQLService", `CodeQL Create Command: ${command}`);
 
     try {
       progress.report({ message: `Creating ${language} database...` });
@@ -877,7 +874,7 @@ export class CodeQLService {
   ): Promise<any> {
     const config = vscode.workspace.getConfiguration("codeql-scanner");
     const codeqlPath = config.get<string>("codeqlPath", "codeql");
-    const suite = config.get<string>("suite", "code-scanning");
+    const suites = config.get<Array<string>>("suites", ["default"]);
     const threatModel = config
       .get<string>("threatModel", "Remote")
       .toLowerCase();
@@ -889,7 +886,20 @@ export class CodeQLService {
     );
 
     // Build the query suite argument
-    var queries = `codeql/${language}-queries`;
+    // var queries = `codeql/${language}-queries`;
+    var queries = this.findQueryPack(language);
+    this.logger.info(
+      "CodeQLService",
+      `Using query pack: ${queries} for language: ${language}`
+    );
+    if (!queries) {
+      throw new Error(
+        `No query pack found for language: ${language}. Please ensure the pack is installed.`
+      );
+    }
+
+    const suite = suites[0];
+    this.logger.info("CodeQLService", `Using suite: ${suite} for analysis`);
     if (
       suite === "code-scanning" ||
       suite === "security-extended" ||
@@ -903,6 +913,8 @@ export class CodeQLService {
       command += ` --threat-model ${threatModel}`;
     }
     command += ` "${databasePath}" "${queries}"`;
+
+    this.logger.info("CodeQLService", `CodeQL Analyze Command: ${command}`);
 
     try {
       progress.report({ message: "Running CodeQL analysis..." });
@@ -921,6 +933,35 @@ export class CodeQLService {
       return JSON.parse(sarifContent);
     } catch (error) {
       throw new Error(`Failed to analyze CodeQL database: ${error}`);
+    }
+  }
+
+  private findQueryPack(language: string): string | undefined {
+    const codeqlDir = this.getCodeQLDirectory();
+    const queryPackPath = path.join(codeqlDir, "packages");
+
+    // List all directories in the packages folder
+    if (!fs.existsSync(queryPackPath)) {
+      this.logger.warn(
+        "CodeQLService",
+        `Query pack directory does not exist: ${queryPackPath}`
+      );
+      return undefined;
+    }
+
+    const orgDirs = fs.readdirSync(queryPackPath, { withFileTypes: true });
+    for (const orgDir of orgDirs) {
+      const orgPath = path.join(queryPackPath, orgDir.name);
+      // codeql
+      if (!orgDir.isDirectory()) {
+        continue;
+      }
+
+      for (const packDir of fs.readdirSync(orgPath, { withFileTypes: true })) {
+        if (packDir.isDirectory() && packDir.name === `${language}-queries`) {
+          return `${orgDir.name}/${packDir.name}`;
+        }
+      }
     }
   }
 
