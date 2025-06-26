@@ -8,7 +8,7 @@
 [![Installs](https://img.shields.io/visual-studio-marketplace/i/GeekMasher.codeql-scanner-vscode?style=for-the-badge)](https://marketplace.visualstudio.com/items?itemName=GeekMasher.codeql-scanner-vscode)
 [![GitHub Stars](https://img.shields.io/github/stars/GeekMasher/codeql-scanner-vscode?style=for-the-badge)][github]
 [![GitHub Issues](https://img.shields.io/github/issues/GeekMasher/codeql-scanner-vscode?style=for-the-badge)][github-issues]
-[![License](https://img.shields.io/github/license/geekmasher/codeql-scanner-vscode?style=for-the-badge)][license]
+[![License](https://img.shields.io/github/license/GeekMasher/codeql-scanner-vscode?style=for-the-badge)][license]
 
 </div>
 <!-- markdownlint-restore -->
