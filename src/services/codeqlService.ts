@@ -249,7 +249,7 @@ export class CodeQLService {
     );
 
     const results = this.convertAlertsToResults(alerts);
-    
+
     // Notify UI immediately when remote results are available
     if (this.resultsCallback && results.length > 0) {
       this.resultsCallback(results);
@@ -1006,7 +1006,9 @@ export class CodeQLService {
         const rule = rules.find((r: any) => r.id === result.ruleId);
         // Use sub-severity from rules if available, otherwise map severity
         const severity =
-          rule?.properties?.["sub-severity"] || this.mapSeverity(result.level);
+          this.mapSeverity(
+            rule?.properties?.["security-severity"] || result.level
+          ) || "medium";
 
         const location = result.locations[0];
         const physicalLocation = location.physicalLocation;
@@ -1077,7 +1079,21 @@ export class CodeQLService {
     return results;
   }
 
-  private mapSeverity(level?: string): string {
+  private mapSeverity(level?: string): string | null {
+    if (!level) return null;
+
+    try {
+      // Try and parse level as a number if it's a string
+      const parseLevel = parseFloat(level);
+      // Bit of a hack
+      if (parseLevel >= 9.0) return "critical";
+      else if (parseLevel >= 7.0) return "high";
+      else if (parseLevel >= 5.0) return "medium";
+      else if (parseLevel >= 3.0) return "low";
+      else return "info";
+    } catch (error) {}
+
+    // Check if the level is a float
     switch (level?.toLowerCase()) {
       case "critical":
         return "critical";
@@ -1089,7 +1105,7 @@ export class CodeQLService {
       case "info":
         return "low";
       default:
-        return "medium";
+        return "info";
     }
   }
 
@@ -1159,7 +1175,7 @@ export class CodeQLService {
               language
             );
             allResults.push(...results);
-            
+
             // Notify UI immediately when SARIF results are loaded
             if (this.resultsCallback && results.length > 0) {
               this.resultsCallback([...allResults]); // Send a copy of all results so far
@@ -1213,7 +1229,7 @@ export class CodeQLService {
                 language
               );
               allResults.push(...results);
-              
+
               // Notify UI immediately when SARIF results are loaded
               if (this.resultsCallback && results.length > 0) {
                 this.resultsCallback([...allResults]); // Send a copy of all results so far
@@ -1245,7 +1261,7 @@ export class CodeQLService {
               language
             );
             allResults.push(...results);
-            
+
             // Notify UI immediately when SARIF results are loaded
             if (this.resultsCallback && results.length > 0) {
               this.resultsCallback([...allResults]); // Send a copy of all results so far
