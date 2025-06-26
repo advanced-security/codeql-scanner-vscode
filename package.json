@@ -96,15 +96,6 @@
             "https://your-github-enterprise.com/api/v3"
           ]
         },
-        "codeql-scanner.searchPaths": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": [],
-          "description": "Paths to search for source code",
-          "scope": "resource"
-        },
         "codeql-scanner.suites": {
           "type": "array",
           "items": {
@@ -117,25 +108,22 @@
           "description": "CodeQL query suites to run",
           "scope": "resource"
         },
+        "codeql-scanner.threatModel": {
+          "type": "string",
+          "default": "Remote",
+          "enum": [
+            "Remote",
+            "Local"
+          ],
+          "description": "Threat model to use for analysis (e.g., 'remote', 'local')",
+          "scope": "resource"
+        },
         "codeql-scanner.languages": {
           "type": "array",
           "items": {
-            "type": "string",
-            "enum": [
-              "javascript",
-              "typescript",
-              "python",
-              "java",
-              "csharp",
-              "cpp",
-              "go",
-              "ruby"
-            ]
+            "type": "string"
           },
-          "default": [
-            "javascript",
-            "typescript"
-          ],
+          "default": [],
           "description": "Programming languages to analyze",
           "scope": "resource"
         },

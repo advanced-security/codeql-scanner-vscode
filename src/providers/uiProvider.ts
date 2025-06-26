@@ -2369,15 +2369,11 @@ export class UiProvider implements vscode.WebviewViewProvider {
             switch (message.command) {
                 case 'configLoaded':
                     const config = message.config;
-                    document.getElementById('githubToken').value = config.githubToken || '';
-                    document.getElementById('githubOwner').value = config.githubOwner || '';
-                    document.getElementById('githubRepo').value = config.githubRepo || '';
+                    console.log('Configuration loaded:', config);
                     
                     // Set selected suite (take first suite if multiple, default to code-scanning)
                     const selectedSuite = config.suites && config.suites.length > 0 ? config.suites[0] : 'code-scanning';
                     setSelectedSuite(selectedSuite);
-                    
-                    document.getElementById('codeqlPath').value = config.codeqlPath || 'codeql';
                     
                     // Set selected threat model (default to Remote)
                     const selectedThreatModel = config.threatModel || 'Remote';
@@ -2385,7 +2381,10 @@ export class UiProvider implements vscode.WebviewViewProvider {
                     
                     // Set selected languages if available
                     if (config.languages && config.languages.length > 0) {
+                        console.log('Setting selected languages:', config.languages);
                         setSelectedLanguages(config.languages);
+                    } else {
+                        console.log('No languages found in config, defaulting to empty selection');
                     }
                     break;
 
