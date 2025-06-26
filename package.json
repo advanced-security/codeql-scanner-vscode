@@ -8,7 +8,7 @@
     "url": "https://github.com/geekmasher/codeql-scanner-vscode.git"
   },
   "icon": "src/assets/VS-marketplace-CodeQL-icon.png",
-  "publisher": "codeql-scanner",
+  "publisher": "GeekMasher",
   "engines": {
     "vscode": "^1.74.0"
   },
