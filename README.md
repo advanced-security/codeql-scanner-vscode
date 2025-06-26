@@ -6,8 +6,8 @@
 
 [![Version](https://img.shields.io/visual-studio-marketplace/v/GeekMasher.codeql-scanner-vscode?style=for-the-badge)](https://marketplace.visualstudio.com/items?itemName=GeekMasher.codeql-scanner-vscode)
 [![Installs](https://img.shields.io/visual-studio-marketplace/i/GeekMasher.codeql-scanner-vscode?style=for-the-badge)](https://marketplace.visualstudio.com/items?itemName=GeekMasher.codeql-scanner-vscode)
-[![GitHub Stars](https://img.shields.io/github/stars/geekmasher/codeql-scanner-vscode?style=for-the-badge)][github]
-[![GitHub Issues](https://img.shields.io/github/issues/geekmasher/codeql-scanner-vscode?style=for-the-badge)][github-issues]
+[![GitHub Stars](https://img.shields.io/github/stars/GeekMasher/codeql-scanner-vscode?style=for-the-badge)][github]
+[![GitHub Issues](https://img.shields.io/github/issues/GeekMasher/codeql-scanner-vscode?style=for-the-badge)][github-issues]
 [![License](https://img.shields.io/github/license/geekmasher/codeql-scanner-vscode?style=for-the-badge)][license]
 
 </div>
@@ -25,7 +25,8 @@ Seamlessly integrate GitHub's powerful CodeQL scanning engine directly into your
 - **🌊 Data Flow Analysis**: Trace security issues from source to sink with intuitive navigation
 - **🔄 GitHub Integration**: Connect to GitHub for enhanced scanning capabilities and team collaboration
 - **⚙️ Flexible Configuration**: Choose between local and remote scanning options to suit your workflow
-- **🧰 Multi-Language Support**: Analyze JavaScript, TypeScript, Python, Java, C#, C/C++, Go, Ruby, Swift, Kotlin, and Scala code
+- **🧰 Multi-Language Support**: Analyze JavaScript, TypeScript, Python, Java, C#, C/C++, Go, Ruby, Swift, Kotlin, and others code
+  - **📜 Custom Extractors**: Supports custom CodeQL extractors
 
 ## 🚀 Getting Started
 
