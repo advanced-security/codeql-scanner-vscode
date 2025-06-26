@@ -431,15 +431,44 @@ export class GitHubService {
         `repos/${owner}/${repo}/code-scanning/alerts`,
         "request"
       );
-      const response = await this.octokit.codeScanning.listAlertsForRepo({
-        owner,
-        repo,
-        state: "open",
-        per_page: 100,
-      });
+      
+      const allAlerts: any[] = [];
+      let page = 1;
+      let hasNextPage = true;
+      
+      // Use pagination to fetch all alerts
+      while (hasNextPage) {
+        this.logger.debug(
+          "GitHubService", 
+          `Fetching code scanning alerts page ${page}`,
+          { owner, repo }
+        );
+        
+        const response = await this.octokit.codeScanning.listAlertsForRepo({
+          owner,
+          repo,
+          state: "open",
+          per_page: 100,
+          page: page,
+        });
+        
+        if (response.data.length === 0) {
+          hasNextPage = false;
+        } else {
+          allAlerts.push(...response.data);
+          page++;
+          
+          // Check if we've reached the end of pagination
+          // by looking at the headers
+          const linkHeader = response.headers.link;
+          if (!linkHeader || !linkHeader.includes('rel="next"')) {
+            hasNextPage = false;
+          }
+        }
+      }
 
       // Filter for CodeQL alerts only
-      const codeqlAlerts = response.data.filter(
+      const codeqlAlerts = allAlerts.filter(
         (alert: any) =>
           alert.tool &&
           (alert.tool.name === "CodeQL" || alert.tool.name.startsWith("CodeQL"))
@@ -450,7 +479,8 @@ export class GitHubService {
         "getCodeQLAlerts",
         "completed",
         {
-          totalAlerts: response.data.length,
+          totalPages: page,
+          totalAlerts: allAlerts.length,
           codeqlAlerts: codeqlAlerts.length,
         }
       );

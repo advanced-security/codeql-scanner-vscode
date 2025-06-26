@@ -217,4 +217,24 @@ export class LoggerService {
                 break;
         }
     }
+    
+    public logUserInteraction(interactionType: string, item: string, data?: any): void {
+        this.info('UserInteraction', `${interactionType}: ${item}`, data);
+    }
+
+    /**
+     * Log statistics about scan results in a structured way
+     * @param source Source of the statistics (e.g., 'ResultsProvider')
+     * @param results Statistics about the scan results
+     */
+    public logScanStatistics(source: string, results: {
+        totalCount: number;
+        byLanguage?: { language: string; count: number; percentage: number }[];
+        bySeverity?: { [severity: string]: number };
+        topRules?: { rule: string; count: number; percentage: number }[];
+        topFiles?: { file: string; count: number; percentage: number }[];
+        dataFlow?: { count: number; percentage: number };
+    }): void {
+        this.info(source, `Scan Results Statistics (${results.totalCount} alerts)`, results);
+    }
 }

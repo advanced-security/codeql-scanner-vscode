@@ -162,10 +162,7 @@ export class UiProvider implements vscode.WebviewViewProvider {
         "Automatically set threat model to 'Remote' as default"
       );
     }
-    this.logger.info(
-      "UiProvider",
-      `Using threat model: ${threatModel}`
-    )
+    this.logger.info("UiProvider", `Using threat model: ${threatModel}`);
 
     // Auto-select GitHub repository languages if no manual selection exists
     let languages = config.get<string[]>("languages", []);
@@ -417,7 +414,8 @@ export class UiProvider implements vscode.WebviewViewProvider {
       }
 
       // Map GitHub languages to CodeQL supported languages
-      const mappedLanguages = this._codeqlService.mapLanguagesToCodeQL(githubLanguages);
+      const mappedLanguages =
+        this._codeqlService.mapLanguagesToCodeQL(githubLanguages);
 
       if (mappedLanguages.length > 0) {
         // Save the auto-selected languages to configuration
@@ -429,12 +427,18 @@ export class UiProvider implements vscode.WebviewViewProvider {
 
         this.logger.info(
           "UiProvider",
-          `Auto-selected CodeQL languages from GitHub repository: ${mappedLanguages.join(", ")} (from GitHub languages: ${githubLanguages.join(", ")})`
+          `Auto-selected CodeQL languages from GitHub repository: ${mappedLanguages.join(
+            ", "
+          )} (from GitHub languages: ${githubLanguages.join(", ")})`
         );
 
         // Notify the user about the auto-selection
         vscode.window.showInformationMessage(
-          `Auto-selected ${mappedLanguages.length} CodeQL language(s) from your repository: ${mappedLanguages.join(", ")}`
+          `Auto-selected ${
+            mappedLanguages.length
+          } CodeQL language(s) from your repository: ${mappedLanguages.join(
+            ", "
+          )}`
         );
 
         // Send auto-selection notification to webview
@@ -443,12 +447,14 @@ export class UiProvider implements vscode.WebviewViewProvider {
           success: true,
           languages: mappedLanguages,
           githubLanguages: githubLanguages,
-          message: `Auto-selected ${mappedLanguages.length} language(s) from your repository`
+          message: `Auto-selected ${mappedLanguages.length} language(s) from your repository`,
         });
       } else {
         this.logger.info(
           "UiProvider",
-          `No CodeQL-supported languages found from GitHub repository languages: ${githubLanguages.join(", ")}`
+          `No CodeQL-supported languages found from GitHub repository languages: ${githubLanguages.join(
+            ", "
+          )}`
         );
 
         // Notify about no compatible languages found
@@ -457,7 +463,9 @@ export class UiProvider implements vscode.WebviewViewProvider {
           success: false,
           languages: [],
           githubLanguages: githubLanguages,
-          message: `No CodeQL-supported languages found in repository (detected: ${githubLanguages.join(", ")})`
+          message: `No CodeQL-supported languages found in repository (detected: ${githubLanguages.join(
+            ", "
+          )})`,
         });
       }
 
@@ -465,9 +473,9 @@ export class UiProvider implements vscode.WebviewViewProvider {
         "UiProvider",
         "autoSelectGitHubLanguages",
         "completed",
-        { 
+        {
           githubLanguages: githubLanguages,
-          mappedLanguages: mappedLanguages
+          mappedLanguages: mappedLanguages,
         }
       );
 
@@ -555,7 +563,10 @@ export class UiProvider implements vscode.WebviewViewProvider {
       // Convert GitHub alerts to our ScanResult format
       const scanResults = codeqlAlerts.map((alert: any) => ({
         ruleId: alert.rule?.id || "unknown",
-        severity: this.mapGitHubSeverityToLocal(alert.rule?.severity),
+        severity: this.mapGitHubSeverityToLocal(
+          alert.rule?.security_severity_level || alert.rule?.severity
+        ),
+        language: this.mapCodeQLAlertLanguage(alert.rule?.id),
         message:
           alert.message?.text || alert.rule?.description || "No description",
         location: {
@@ -619,14 +630,34 @@ export class UiProvider implements vscode.WebviewViewProvider {
         return "medium";
       case "low":
       case "note":
-      case "info":
         return "low";
+      case "info":
+        return "info";
       default:
         return "medium";
     }
   }
 
+  private mapCodeQLAlertLanguage(ruleId?: string): string {
+    if (!ruleId) return "unknown";
+    const parts = ruleId.split("/");
+    const language = parts[0].toLowerCase() || "unknown";
+    switch (language) {
+      case "js":
+        return "javascript";
+      case "py":
+        return "python";
+      case "rb":
+        return "ruby";
+    }
+    return language;
+  }
+
   public updateScanResults(results: ScanResult[]): void {
+    this.logger.info(
+      "UiProvider",
+      `Updating scan results with ${results.length} new results`
+    );
     this._scanResults = results;
     this.loadAlertsSummary();
   }

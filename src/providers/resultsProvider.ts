@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { ScanResult, FlowStep } from '../services/codeqlService';
+import { LoggerService } from '../services/loggerService';
 
 export class ResultsProvider implements vscode.TreeDataProvider<ResultItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<ResultItem | undefined | null | void> = new vscode.EventEmitter<ResultItem | undefined | null | void>();
@@ -8,32 +9,57 @@ export class ResultsProvider implements vscode.TreeDataProvider<ResultItem> {
     private results: ScanResult[] = [];
     private diagnosticCollection: vscode.DiagnosticCollection;
     private hasBeenScanned: boolean = false;
+    private logger: LoggerService;
 
     constructor() {
         // Create a diagnostic collection for CodeQL security issues
         this.diagnosticCollection = vscode.languages.createDiagnosticCollection('codeql-security');
+        this.logger = LoggerService.getInstance();
     }
 
     refresh(): void {
+        this.logger.debug('ResultsProvider', 'Refreshing tree view');
         this._onDidChangeTreeData.fire();
     }
 
     setResults(results: ScanResult[]): void {
+        this.logger.logServiceCall('ResultsProvider', 'setResults', 'started', { count: results.length });
+        
+        // Count results by severity
+        const severityCounts: { [severity: string]: number } = {};
+        results.forEach(result => {
+            const severity = result.severity || 'unknown';
+            severityCounts[severity] = (severityCounts[severity] || 0) + 1;
+        });
+        
         this.results = results;
         this.hasBeenScanned = true;
         this.updateDiagnostics(results);
         this.refresh();
+        
+        // Generate comprehensive statistics if we have results
+        if (results.length > 0) {
+            this.logResultsStatistics();
+        }
+        
+        this.logger.logServiceCall('ResultsProvider', 'setResults', 'completed', { 
+            totalCount: results.length,
+            severityCounts: severityCounts
+        });
     }
 
     getResults(): ScanResult[] {
+        this.logger.debug('ResultsProvider', 'Getting results', { count: this.results.length });
         return this.results;
     }
 
     clearResults(): void {
+        this.logger.logServiceCall('ResultsProvider', 'clearResults', 'started');
         this.results = [];
         this.hasBeenScanned = false;
         this.diagnosticCollection.clear();
         this.refresh();
+        this.logger.logServiceCall('ResultsProvider', 'clearResults', 'completed');
     }
 
     getTreeItem(element: ResultItem): vscode.TreeItem {
@@ -43,6 +69,8 @@ export class ResultsProvider implements vscode.TreeDataProvider<ResultItem> {
     getChildren(element?: ResultItem): Thenable<ResultItem[]> {
         if (!element) {
             // Root level - group by language
+            this.logger.debug('ResultsProvider', 'Getting root level tree items');
+            
             if (!this.results || this.results.length === 0) {
                 // Show different messages based on whether a scan has been run
                 const message = this.hasBeenScanned 
@@ -51,6 +79,8 @@ export class ResultsProvider implements vscode.TreeDataProvider<ResultItem> {
                 const tooltip = this.hasBeenScanned
                     ? 'No security vulnerabilities were found in the scanned code'
                     : 'Click "CodeQL: Run Scan" to analyze your code for security vulnerabilities';
+                
+                this.logger.debug('ResultsProvider', `Showing empty state: ${message}`);
                 
                 return Promise.resolve([
                     new ResultItem(
@@ -68,6 +98,12 @@ export class ResultsProvider implements vscode.TreeDataProvider<ResultItem> {
             }
             
             const groups = this.groupByLanguage(this.results);
+            
+            this.logger.debug('ResultsProvider', 'Grouping results by language', {
+                languages: Object.keys(groups),
+                counts: Object.fromEntries(Object.entries(groups).map(([lang, results]) => [lang, results.length]))
+            });
+            
             return Promise.resolve(
                 Object.entries(groups).map(([language, results]) => 
                     new ResultItem(
@@ -81,8 +117,14 @@ export class ResultsProvider implements vscode.TreeDataProvider<ResultItem> {
             );
         } else if (element.type === 'language') {
             // Second level - group by severity within language
+            this.logger.debug('ResultsProvider', `Getting issues for language: ${element.language}`, {
+                language: element.language,
+                count: element.results?.length || 0
+            });
+            
             if (!element.results || element.results.length === 0) {
                 // Show "no results" for this language
+                this.logger.debug('ResultsProvider', `No results for language: ${element.language}`);
                 return Promise.resolve([
                     new ResultItem(
                         '✅ No security alerts found',
@@ -100,6 +142,13 @@ export class ResultsProvider implements vscode.TreeDataProvider<ResultItem> {
             
             const severityGroups = this.groupBySeverity(element.results);
             const sortedSeverities = this.sortSeverityGroups(severityGroups);
+            
+            this.logger.debug('ResultsProvider', `Grouped issues by severity for ${element.language}`, {
+                language: element.language,
+                severities: Object.keys(severityGroups),
+                counts: Object.fromEntries(Object.entries(severityGroups).map(([sev, results]) => [sev, results.length]))
+            });
+            
             return Promise.resolve(
                 sortedSeverities.map(([severity, results]) => 
                     new ResultItem(
@@ -115,6 +164,12 @@ export class ResultsProvider implements vscode.TreeDataProvider<ResultItem> {
             );
         } else if (element.type === 'severity') {
             // Third level - individual results
+            this.logger.debug('ResultsProvider', `Getting individual results for ${element.language}/${element.severity}`, {
+                language: element.language,
+                severity: element.severity,
+                count: element.results?.length || 0
+            });
+            
             return Promise.resolve(
                 element.results!.map(result => 
                     new ResultItem(
@@ -132,6 +187,14 @@ export class ResultsProvider implements vscode.TreeDataProvider<ResultItem> {
         } else if (element.type === 'result' && element.result?.flowSteps) {
             // Fourth level - flow steps (hidden by default)
             const flowSteps = element.result.flowSteps;
+            
+            this.logger.debug('ResultsProvider', `Expanding flow steps for result: ${element.result.ruleId}`, {
+                ruleId: element.result.ruleId,
+                steps: flowSteps.length,
+                file: element.result.location.file,
+                line: element.result.location.startLine
+            });
+            
             return Promise.resolve(
                 flowSteps.map((step, index) => {
                     const isSource = index === 0;
@@ -162,6 +225,8 @@ export class ResultsProvider implements vscode.TreeDataProvider<ResultItem> {
     }
 
     private groupByLanguage(results: ScanResult[]): { [language: string]: ScanResult[] } {
+        this.logger.logServiceCall('ResultsProvider', 'groupByLanguage', 'started', { count: results.length });
+        
         // Get configured languages from settings
         const config = vscode.workspace.getConfiguration("codeql-scanner");
         const configuredLanguages = config.get<string[]>("languages", []);
@@ -183,11 +248,19 @@ export class ResultsProvider implements vscode.TreeDataProvider<ResultItem> {
             }
         });
         
+        this.logger.logServiceCall('ResultsProvider', 'groupByLanguage', 'completed', {
+            languages: Object.keys(groups),
+            configuredLanguages: configuredLanguages,
+            counts: Object.fromEntries(Object.entries(groups).map(([lang, results]) => [lang, results.length]))
+        });
+        
         return groups;
     }
 
     private groupBySeverity(results: ScanResult[]): { [severity: string]: ScanResult[] } {
-        return results.reduce((groups, result) => {
+        this.logger.debug('ResultsProvider', 'Grouping results by severity', { count: results.length });
+        
+        const groups = results.reduce((groups, result) => {
             const severity = result.severity || 'unknown';
             if (!groups[severity]) {
                 groups[severity] = [];
@@ -195,6 +268,13 @@ export class ResultsProvider implements vscode.TreeDataProvider<ResultItem> {
             groups[severity].push(result);
             return groups;
         }, {} as { [severity: string]: ScanResult[] });
+        
+        this.logger.debug('ResultsProvider', 'Severity grouping completed', {
+            severities: Object.keys(groups),
+            counts: Object.fromEntries(Object.entries(groups).map(([sev, results]) => [sev, results.length]))
+        });
+        
+        return groups;
     }
 
     private getSeverityDisplayName(severity: string): string {
@@ -212,9 +292,13 @@ export class ResultsProvider implements vscode.TreeDataProvider<ResultItem> {
     }
 
     private sortSeverityGroups(severityGroups: { [severity: string]: ScanResult[] }): [string, ScanResult[]][] {
+        this.logger.debug('ResultsProvider', 'Sorting severity groups', {
+            severities: Object.keys(severityGroups)
+        });
+        
         const severityOrder = ['critical', 'high', 'error', 'medium', 'warning', 'low', 'info', 'unknown'];
         
-        return Object.entries(severityGroups).sort(([a], [b]) => {
+        const sorted = Object.entries(severityGroups).sort(([a], [b]) => {
             const aIndex = severityOrder.indexOf(a);
             const bIndex = severityOrder.indexOf(b);
             
@@ -225,13 +309,22 @@ export class ResultsProvider implements vscode.TreeDataProvider<ResultItem> {
             
             return aIndex - bIndex;
         });
+        
+        this.logger.debug('ResultsProvider', 'Severity groups sorted', {
+            sortedOrder: sorted.map(([severity]) => severity)
+        });
+        
+        return sorted;
     }
 
     private updateDiagnostics(results: ScanResult[]): void {
+        this.logger.logServiceCall('ResultsProvider', 'updateDiagnostics', 'started', { count: results.length });
+        
         // Clear existing diagnostics
         this.diagnosticCollection.clear();
 
         if (!results || results.length === 0) {
+            this.logger.debug('ResultsProvider', 'No diagnostics to display');
             return;
         }
 
@@ -323,26 +416,120 @@ export class ResultsProvider implements vscode.TreeDataProvider<ResultItem> {
         diagnosticsMap.forEach((diagnostics, uriString) => {
             this.diagnosticCollection.set(vscode.Uri.parse(uriString), diagnostics);
         });
+
+        this.logger.logServiceCall('ResultsProvider', 'updateDiagnostics', 'completed', {
+            fileCount: diagnosticsMap.size,
+            diagnosticCount: Array.from(diagnosticsMap.values()).reduce((sum, diags) => sum + diags.length, 0)
+        });
     }
 
     private mapToVSCodeSeverity(severity: string): vscode.DiagnosticSeverity {
+        const originalSeverity = severity;
+        let vscSeverity: vscode.DiagnosticSeverity;
+        
         switch (severity?.toLowerCase()) {
             case 'critical':
             case 'high':
             case 'error':
-                return vscode.DiagnosticSeverity.Error;
+                vscSeverity = vscode.DiagnosticSeverity.Error;
+                break;
             case 'medium':
             case 'warning':
-                return vscode.DiagnosticSeverity.Warning;
+                vscSeverity = vscode.DiagnosticSeverity.Warning;
+                break;
             case 'low':
             case 'info':
-                return vscode.DiagnosticSeverity.Information;
+                vscSeverity = vscode.DiagnosticSeverity.Information;
+                break;
             default:
-                return vscode.DiagnosticSeverity.Warning;
+                vscSeverity = vscode.DiagnosticSeverity.Warning;
+                break;
         }
+        
+        this.logger.debug('ResultsProvider', 'Mapped severity', {
+            from: originalSeverity,
+            to: vscode.DiagnosticSeverity[vscSeverity]
+        });
+        
+        return vscSeverity;
+    }
+
+    /**
+     * Logs comprehensive statistics about the scan results
+     * This provides a detailed breakdown of issues by language and severity
+     */
+    private logResultsStatistics(): void {
+        if (!this.results || this.results.length === 0) {
+            this.logger.info('ResultsStatistics', 'No scan results to analyze');
+            return;
+        }
+
+        // Overall statistics
+        const totalAlerts = this.results.length;
+        
+        // Group by language
+        const languageGroups = this.groupByLanguage(this.results);
+        const languageStats = Object.entries(languageGroups).map(([lang, results]) => ({
+            language: lang,
+            count: results.length,
+            percentage: Math.round((results.length / totalAlerts) * 100)
+        }));
+        
+        // Group by severity
+        const severityCounts: { [severity: string]: number } = {};
+        this.results.forEach(result => {
+            const severity = result.severity || 'unknown';
+            severityCounts[severity] = (severityCounts[severity] || 0) + 1;
+        });
+        
+        // Count rules
+        const ruleMap: { [ruleId: string]: number } = {};
+        this.results.forEach(result => {
+            const ruleId = result.ruleId || 'unknown';
+            ruleMap[ruleId] = (ruleMap[ruleId] || 0) + 1;
+        });
+        
+        // Find top rules
+        const topRules = Object.entries(ruleMap)
+            .sort(([, a], [, b]) => b - a)
+            .slice(0, 5)
+            .map(([rule, count]) => ({ rule, count, percentage: Math.round((count / totalAlerts) * 100) }));
+        
+        // Count files with issues
+        const fileMap: { [file: string]: number } = {};
+        this.results.forEach(result => {
+            if (result.location && result.location.file) {
+                const fileName = result.location.file.split('/').pop() || 'unknown';
+                fileMap[fileName] = (fileMap[fileName] || 0) + 1;
+            }
+        });
+        
+        // Find files with most issues
+        const topFiles = Object.entries(fileMap)
+            .sort(([, a], [, b]) => b - a)
+            .slice(0, 5)
+            .map(([file, count]) => ({ file, count, percentage: Math.round((count / totalAlerts) * 100) }));
+            
+        // Count data flow results
+        const dataFlowCount = this.results.filter(r => r.flowSteps && r.flowSteps.length > 0).length;
+        const dataFlowPercentage = Math.round((dataFlowCount / totalAlerts) * 100);
+        
+        // Log the comprehensive statistics using the specialized method
+        this.logger.logScanStatistics('ResultsProvider', {
+            totalCount: totalAlerts,
+            byLanguage: languageStats,
+            bySeverity: severityCounts,
+            topRules,
+            topFiles,
+            dataFlow: {
+                count: dataFlowCount,
+                percentage: dataFlowPercentage
+            }
+        });
     }
 
     dispose(): void {
+        this.logger.info('ResultsProvider', 'Disposing ResultsProvider');
         this.diagnosticCollection.dispose();
     }
 }
@@ -485,11 +672,14 @@ export class ResultItem extends vscode.TreeItem {
     }
 
     private getCommand(): vscode.Command | undefined {
+        const logger = LoggerService.getInstance();
+        
         if (this.type === 'result' && this.result) {
             return {
-                command: 'vscode.open',
+                command: 'codeql-scanner.resultSelected',
                 title: 'Open File',
                 arguments: [
+                    this,
                     vscode.Uri.file(this.result.location.file),
                     {
                         selection: new vscode.Range(
@@ -503,9 +693,10 @@ export class ResultItem extends vscode.TreeItem {
             };
         } else if (this.type === 'flowStep' && this.flowStep) {
             return {
-                command: 'vscode.open',
+                command: 'codeql-scanner.flowStepSelected',
                 title: 'Open Flow Step',
                 arguments: [
+                    this,
                     vscode.Uri.file(this.flowStep.file),
                     {
                         selection: new vscode.Range(
