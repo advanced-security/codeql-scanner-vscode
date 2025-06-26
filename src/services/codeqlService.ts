@@ -850,7 +850,7 @@ export class CodeQLService {
     const databasePath = this.getCodeQLDatabase(language);
     let source = this.getWorkspaceFolder();
 
-    var command = `${codeqlPath} database create --overwrite --language ${language} -s "${source}"`;
+    var command = `${codeqlPath} database create --overwrite -j 0 --language ${language} -s "${source}"`;
     // Add BMN
     if (language === "cpp" || language === "csharp" || language === "java") {
       command += ` --build-mode=none`;
@@ -925,7 +925,7 @@ export class CodeQLService {
       queries += `:codeql-suites/${language}-code-scanning.qls`;
     }
 
-    var command = `${codeqlPath} database analyze --output "${outputPath}" --format sarif-latest`;
+    var command = `${codeqlPath} database analyze -j 0 --output "${outputPath}" --format sarif-latest`;
     if (threatModel !== "remote") {
       command += ` --threat-model ${threatModel}`;
     }

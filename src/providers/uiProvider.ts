@@ -1800,14 +1800,14 @@ export class UiProvider implements vscode.WebviewViewProvider {
                     <span class="scan-icon">🔍</span>
                     <span>Run Local CodeQL Scanner</span>
                 </button>
-                <span id="scanTimer" class="timer-display" style="display: none;"></span>
+                <span id="scanTimer" class="timer-display" style="display: inline;">--</span>
             </div>
             <div class="button-row">
                 <button onclick="fetchRemoteAlerts()" id="fetchButton" class="action-button">
                     <span class="fetch-icon">🌐</span>
                     <span>Fetch Remote Security Alerts</span>
                 </button>
-                <span id="fetchTimer" class="timer-display" style="display: none;"></span>
+                <span id="fetchTimer" class="timer-display" style="display: inline;">--</span>
             </div>
         </div>
     </div>
@@ -2228,7 +2228,8 @@ export class UiProvider implements vscode.WebviewViewProvider {
             const timerEl = document.getElementById(timerId);
             if (timerEl) {
                 timerEl.textContent = '';
-                timerEl.style.display = 'none';
+                // Don't hide the timer display anymore
+                timerEl.style.display = 'inline';
             }
         }
         
@@ -2455,7 +2456,7 @@ export class UiProvider implements vscode.WebviewViewProvider {
                     // Show final duration in timer display
                     if (message.duration !== undefined) {
                         updateTimerDisplay('scanTimer', message.duration);
-                        setTimeout(() => clearTimerDisplay('scanTimer'), 5000);
+                        // Timer will stay visible permanently (no timeout to clear it)
                     }
                     
                     showMessage(message.message, !message.success);
@@ -2510,7 +2511,7 @@ export class UiProvider implements vscode.WebviewViewProvider {
                     // Show final duration in timer display
                     if (message.duration !== undefined) {
                         updateTimerDisplay('fetchTimer', message.duration);
-                        setTimeout(() => clearTimerDisplay('fetchTimer'), 5000);
+                        // Timer will stay visible permanently (no timeout to clear it)
                     }
                     
                     showMessage(message.message, !message.success);
