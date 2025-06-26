@@ -30,10 +30,40 @@ Seamlessly integrate GitHub's powerful CodeQL scanning engine directly into your
 
 ## 🚀 Getting Started
 
-1. Install the extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=codeql-scanner.codeql-scanner-vscode)
+1. Install the extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=GeekMasher.codeql-scanner-vscode)
 2. Configure your GitHub token (optional for enhanced features)
 3. Open any code repository
 4. Run a scan using the command palette (`Ctrl+Shift+P` or `Cmd+Shift+P`): `CodeQL: Run Scan`
+
+## 📸 Showcase
+
+Here are some screenshots showcasing the extension's capabilities:
+
+<!-- markdownlint-disable -->
+<details>
+<summary>CodeQL Scanner Scan and Alert Summary</summary>
+
+<div align="center">
+<img src="./assets/showcase-scan-summary.png" title="CodeQL Scanner Scan and Alert Summary">
+</div>
+</details>
+
+<details>
+<summary>CodeQL Scanner Configuration Menu / Settings</summary>
+
+<div align="center">
+<img src="./assets/showcase-configuration.png" title="CodeQL Scanner Configuration Menu">
+</div>
+</details>
+
+<details>
+<summary>CodeQL Scanner Results Tree Viewer</summary>
+
+<div align="center">
+<img src="./assets/showcase-results.png" title="CodeQL Scanner Results Tree Viewer">
+</div>
+</details>
+
 
 ## 📋 Prerequisites
 
@@ -49,18 +79,18 @@ Seamlessly integrate GitHub's powerful CodeQL scanning engine directly into your
 
 ## 📋 Available Commands
 
-| Command | Description |
-|---------|-------------|
-| `CodeQL: Run Scan` | Start a security scan on the current workspace |
-| `CodeQL: Initialize Repository` | Set up CodeQL for the current repository |
-| `CodeQL: Run Analysis` | Execute a full code analysis |
-| `CodeQL: Configure Settings` | Open the extension settings |
-| `CodeQL: Show Logs` | View the extension's log output |
-| `CodeQL: Clear Logs` | Clear all log entries |
-| `CodeQL: Clear Inline Diagnostics` | Remove inline problem markers |
-| `CodeQL: Show CLI Information` | Display information about the CodeQL CLI |
-| `CodeQL: Copy Flow Path` | Copy vulnerability data flow path to clipboard |
-| `CodeQL: Navigate Flow Steps` | Step through vulnerability data flow paths |
+| Command                            | Description                                    |
+| ---------------------------------- | ---------------------------------------------- |
+| `CodeQL: Run Scan`                 | Start a security scan on the current workspace |
+| `CodeQL: Initialize Repository`    | Set up CodeQL for the current repository       |
+| `CodeQL: Run Analysis`             | Execute a full code analysis                   |
+| `CodeQL: Configure Settings`       | Open the extension settings                    |
+| `CodeQL: Show Logs`                | View the extension's log output                |
+| `CodeQL: Clear Logs`               | Clear all log entries                          |
+| `CodeQL: Clear Inline Diagnostics` | Remove inline problem markers                  |
+| `CodeQL: Show CLI Information`     | Display information about the CodeQL CLI       |
+| `CodeQL: Copy Flow Path`           | Copy vulnerability data flow path to clipboard |
+| `CodeQL: Navigate Flow Steps`      | Step through vulnerability data flow paths     |
 
 ## ⚙️ Configuration Options
 
@@ -68,7 +98,7 @@ The extension provides several configuration options to customize its behavior:
 
 ```json
 {
-  "codeql-scanner.github.token": "your-github-token",
+  "codeql-scanner.github.token": "your-github-token"
 }
 ```
 
@@ -84,6 +114,7 @@ CodeQL is GitHub's semantic code analysis engine that lets you query code as if 
 ## 🔗 Integration with GitHub
 
 Connect the extension to GitHub for enhanced capabilities:
+
 - Access GitHub's vast CodeQL query library
 - Synchronize with your GitHub repositories
 - View and manage GitHub code scanning alerts
