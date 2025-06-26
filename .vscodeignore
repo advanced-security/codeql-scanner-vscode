@@ -1,5 +1,5 @@
 # Source files
-src/**/*.ts
+# src/**/*.ts
 tsconfig.json
 .eslintrc.json
 
@@ -16,7 +16,7 @@ scripts/**
 .vscode-test/**
 **/*.vsix
 **/*.tgz
-node_modules/**
+# node_modules/**
 
 # Documentation files that aren't needed in the extension package
 **/*.md
