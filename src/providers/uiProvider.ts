@@ -16,6 +16,7 @@ export class UiProvider implements vscode.WebviewViewProvider {
   private logger: LoggerService;
   private _scanStartTime?: number;
   private _fetchStartTime?: number;
+  private _scanInProgress: boolean = false;
 
   constructor(private readonly _extensionContext: vscode.ExtensionContext) {
     this._githubService = new GitHubService();
@@ -420,7 +421,26 @@ export class UiProvider implements vscode.WebviewViewProvider {
   }
 
   private async runLocalScan() {
+    // Check if a scan is already in progress
+    if (this._scanInProgress) {
+      this.logger.warn("UiProvider", "Attempted to start a scan while one is already in progress");
+      
+      // Send message to UI
+      this._view?.webview.postMessage({
+        command: "scanBlocked",
+        success: false,
+        message: "A scan is already in progress. Please wait for it to complete.",
+      });
+      
+      // Show error notification to the user
+      vscode.window.showErrorMessage("CodeQL scan already in progress. Please wait for it to complete.");
+      
+      return;
+    }
+    
     try {
+      // Set scan in progress flag
+      this._scanInProgress = true;
       this._scanStartTime = Date.now();
 
       this._view?.webview.postMessage({
@@ -455,10 +475,33 @@ export class UiProvider implements vscode.WebviewViewProvider {
         message: `CodeQL scan failed after ${durationText}: ${error}`,
         duration: scanDuration,
       });
+    } finally {
+      // Reset scan in progress flag regardless of success or failure
+      this._scanInProgress = false;
     }
   }
 
   private async fetchRemoteAlerts() {
+    // Check if a scan is already in progress
+    if (this._scanInProgress) {
+      this.logger.warn("UiProvider", "Attempted to fetch alerts while a scan is in progress");
+      
+      // Send message to UI
+      this._view?.webview.postMessage({
+        command: "fetchBlocked",
+        success: false,
+        message: "A scan is currently in progress. Please wait for it to complete before fetching alerts.",
+      });
+      
+      // Show error notification to the user
+      vscode.window.showErrorMessage("Cannot fetch alerts: CodeQL scan is in progress. Please wait for it to complete.");
+      
+      return;
+    }
+    
+    // Set scan in progress flag for the duration of the fetch
+    this._scanInProgress = true;
+    
     try {
       this._fetchStartTime = Date.now();
 
@@ -544,6 +587,9 @@ export class UiProvider implements vscode.WebviewViewProvider {
         message: `Failed to fetch remote alerts after ${durationText}: ${error}`,
         duration: fetchDuration,
       });
+    } finally {
+      // Reset scan in progress flag regardless of success or failure
+      this._scanInProgress = false;
     }
   }
 
@@ -1856,7 +1902,6 @@ export class UiProvider implements vscode.WebviewViewProvider {
                         Last scan: <span id="scanDate" style="font-weight: 600;">Never</span>
                     </small>
                 </div>
-            </div>
             
             <div id="noResultsMessage" class="no-results">
                 <div style="font-size: 14px; margin-bottom: 4px;">🛡️</div>
