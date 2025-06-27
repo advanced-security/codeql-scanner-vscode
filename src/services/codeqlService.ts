@@ -395,7 +395,7 @@ export class CodeQLService {
         addedLanguages.add(lang);
         continue;
       }
-
+      //TODO: If language detected is typescript, map it to javascript
       // Check if it's an alias for a CodeQL language
       for (const [codeqlLang, aliases] of Object.entries(this.languages)) {
         if (aliases.includes(lang) && !addedLanguages.has(codeqlLang)) {
@@ -465,9 +465,8 @@ export class CodeQLService {
         }
 
         progress.report({
-          message: `Waiting for analysis (${
-            recentAnalysis?.status || "pending"
-          })...`,
+          message: `Waiting for analysis (${recentAnalysis?.status || "pending"
+            })...`,
         });
       } catch (error) {
         // Continue waiting even if there's an error
@@ -954,8 +953,13 @@ export class CodeQLService {
   }
 
   private findQueryPack(language: string): string | undefined {
+    const config = vscode.workspace.getConfiguration("codeql-scanner")
     const codeqlDir = this.getCodeQLDirectory();
-    const queryPackPath = path.join(codeqlDir, "packages");
+    const queryPackPath = config.get<string>(
+      "codeqlQueryPackPath",
+      path.join(codeqlDir, "packages")
+    );
+    // const queryPackPath = path.join(codeqlDir, "packages");
 
     // List all directories in the packages folder
     if (!fs.existsSync(queryPackPath)) {
@@ -1092,7 +1096,7 @@ export class CodeQLService {
       else if (parseLevel >= 5.0) return "medium";
       else if (parseLevel >= 3.0) return "low";
       else return "info";
-    } catch (error) {}
+    } catch (error) { }
 
     // Check if the level is a float
     switch (level?.toLowerCase()) {
