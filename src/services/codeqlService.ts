@@ -527,7 +527,15 @@ export class CodeQLService {
         fs.unlinkSync(zipPath);
       }
       if (fs.existsSync(extractDir)) {
-        fs.rmSync(extractDir, { recursive: true, force: true });
+        try {
+          fs.rmSync(extractDir, { recursive: true, force: true });
+        } catch {
+          // Fallback for older Node.js versions
+          await execAsync(`rm -rf "${extractDir}"`).catch(() => {
+            // If rm command also fails, just log a warning
+            this.logger.warn("CodeQLService", `Could not clean up directory: ${extractDir}`);
+          });
+        }
       }
       throw error;
     }
