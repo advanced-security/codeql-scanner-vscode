@@ -7,6 +7,7 @@ import * as yaml from "js-yaml";
 import { exec } from "child_process";
 import { promisify } from "util";
 import * as os from "os";
+import * as https from "https";
 
 const execAsync = promisify(exec);
 
@@ -288,21 +289,353 @@ export class CodeQLService {
   }
 
   public async getVersion(): Promise<string> {
-    try {
-      const config = vscode.workspace.getConfiguration("codeql-scanner");
-      const codeqlPath = config.get<string>("codeqlPath", "codeql");
+    const config = vscode.workspace.getConfiguration("codeql-scanner");
+    const codeqlPath = config.get<string>("codeqlPath", "codeql");
+    return this.getVersionForPath(codeqlPath);
+  }
 
+  private async getVersionForPath(codeqlPath: string): Promise<string> {
+    try {
       const { stdout } = await execAsync(
-        `${codeqlPath} version -v --log-to-stderr --format=json`
+        `"${codeqlPath}" version -v --log-to-stderr --format=json`
       );
       const versionInfo = JSON.parse(stdout);
 
       return versionInfo.version || "unknown";
     } catch (error) {
-      this.logger.error("CodeQLService", "Error getting CodeQL version", error);
+      this.logger.debug("CodeQLService", `Error getting CodeQL version for path '${codeqlPath}'`, error);
       throw new Error(
-        "Failed to get CodeQL version. Please check your configuration."
+        `Failed to get CodeQL version from '${codeqlPath}'. Please check your configuration.`
       );
+    }
+  }
+
+  /**
+   * Discover CodeQL CLI from GitHub's CodeQL extension
+   */
+  private async discoverCodeQLFromExtension(): Promise<string | null> {
+    try {
+      // Check if GitHub's CodeQL extension is installed
+      const codeqlExtension = vscode.extensions.getExtension("GitHub.vscode-codeql");
+      
+      if (!codeqlExtension) {
+        this.logger.debug("CodeQLService", "GitHub CodeQL extension not installed");
+        return null;
+      }
+
+      this.logger.debug("CodeQLService", "Found GitHub CodeQL extension, attempting to discover CLI path");
+
+      // Common paths where the CodeQL extension might store the CLI
+      const possiblePaths = [
+        // Extension's bundled CLI (common pattern)
+        path.join(codeqlExtension.extensionPath, "dist", "codeql"),
+        path.join(codeqlExtension.extensionPath, "dist", "codeql.exe"),
+        // User's CodeQL CLI path that the extension might know about
+        // Try to read from extension's configuration or workspace state
+      ];
+
+      // Try each possible path
+      for (const possiblePath of possiblePaths) {
+        try {
+          if (fs.existsSync(possiblePath)) {
+            await this.getVersionForPath(possiblePath);
+            this.logger.debug("CodeQLService", `Found CodeQL CLI at: ${possiblePath}`);
+            return possiblePath;
+          }
+        } catch (error) {
+          // Continue trying other paths
+        }
+      }
+
+      // Also try to get the CLI path from the extension's configuration
+      try {
+        const codeqlConfig = vscode.workspace.getConfiguration("codeQL");
+        const extensionCliPath = codeqlConfig.get<string>("cli.executablePath");
+        
+        if (extensionCliPath && fs.existsSync(extensionCliPath)) {
+          await this.getVersionForPath(extensionCliPath);
+          this.logger.debug("CodeQLService", `Found CodeQL CLI from extension config: ${extensionCliPath}`);
+          return extensionCliPath;
+        }
+      } catch (error) {
+        // Extension config might not exist or be accessible
+      }
+
+      this.logger.debug("CodeQLService", "Could not find CodeQL CLI from GitHub extension");
+      return null;
+    } catch (error) {
+      this.logger.debug("CodeQLService", "Error discovering CodeQL from extension", error);
+      return null;
+    }
+  }
+
+  /**
+   * Prompt user and download/install CodeQL CLI from GitHub
+   */
+  private async promptAndInstallCodeQL(): Promise<string | null> {
+    const response = await vscode.window.showInformationMessage(
+      "CodeQL CLI not found. Would you like to download and install it automatically?",
+      { modal: true },
+      "Yes, Install",
+      "No, Configure Manually"
+    );
+
+    if (response === "Yes, Install") {
+      return await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: "Installing CodeQL CLI",
+        cancellable: true
+      }, async (progress, token) => {
+        try {
+          progress.report({ increment: 10, message: "Getting latest release info..." });
+          
+          const releaseInfo = await this.getLatestCodeQLRelease();
+          if (token.isCancellationRequested) {
+            throw new Error("Installation cancelled");
+          }
+
+          progress.report({ increment: 30, message: "Downloading CodeQL CLI..." });
+          
+          const installPath = await this.downloadAndInstallCodeQL(releaseInfo, progress, token);
+          if (token.isCancellationRequested) {
+            throw new Error("Installation cancelled");
+          }
+
+          progress.report({ increment: 100, message: "Installation complete!" });
+          
+          vscode.window.showInformationMessage("CodeQL CLI installed successfully!");
+          return installPath;
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          vscode.window.showErrorMessage(`Failed to install CodeQL CLI: ${errorMessage}`);
+          throw error;
+        }
+      });
+    } else if (response === "No, Configure Manually") {
+      const openSettings = await vscode.window.showInformationMessage(
+        "Please configure the CodeQL CLI path in settings.",
+        "Open Settings"
+      );
+      
+      if (openSettings === "Open Settings") {
+        await vscode.commands.executeCommand('workbench.action.openSettings', 'codeql-scanner.codeqlPath');
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Get the latest CodeQL release information from GitHub
+   */
+  public async getLatestCodeQLRelease(): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const url = "https://api.github.com/repos/github/codeql-cli-binaries/releases/latest";
+      
+      https.get(url, {
+        headers: {
+          'User-Agent': 'codeql-scanner-vscode'
+        }
+      }, (response) => {
+        let data = '';
+        
+        response.on('data', (chunk) => {
+          data += chunk;
+        });
+        
+        response.on('end', () => {
+          try {
+            const releaseInfo = JSON.parse(data);
+            resolve(releaseInfo);
+          } catch (error) {
+            reject(new Error(`Failed to parse release info: ${error}`));
+          }
+        });
+      }).on('error', (error) => {
+        this.logger.error("CodeQLService", "Failed to get latest CodeQL release", error);
+        reject(new Error("Failed to get latest CodeQL release information"));
+      });
+    });
+  }
+
+  /**
+   * Download and install CodeQL CLI
+   */
+  public async downloadAndInstallCodeQL(
+    releaseInfo: any,
+    progress: vscode.Progress<{ increment?: number; message?: string }>,
+    cancellationToken: vscode.CancellationToken
+  ): Promise<string> {
+    const platform = this.getCurrentPlatform();
+    const asset = releaseInfo.assets.find((asset: any) => 
+      asset.name.includes(platform) && asset.name.endsWith('.zip')
+    );
+
+    if (!asset) {
+      throw new Error(`No CodeQL CLI binary found for platform: ${platform}`);
+    }
+
+    // Create installation directory
+    const installDir = path.join(os.homedir(), ".codeql", "cli");
+    if (!fs.existsSync(installDir)) {
+      fs.mkdirSync(installDir, { recursive: true });
+    }
+
+    const zipPath = path.join(installDir, asset.name);
+    const extractDir = path.join(installDir, "extracted");
+
+    try {
+      // Download the file
+      progress.report({ increment: 20, message: "Downloading..." });
+      
+      await this.downloadFile(asset.browser_download_url, zipPath);
+
+      if (cancellationToken.isCancellationRequested) {
+        throw new Error("Installation cancelled");
+      }
+
+      progress.report({ increment: 60, message: "Extracting..." });
+
+      // Extract the zip file
+      await this.extractZip(zipPath, extractDir);
+
+      // Find the CodeQL executable
+      const executableName = platform.includes('win') ? 'codeql.exe' : 'codeql';
+      const executablePath = this.findCodeQLExecutable(extractDir, executableName);
+
+      if (!executablePath) {
+        throw new Error("Could not find CodeQL executable after extraction");
+      }
+
+      // Make executable on Unix systems
+      if (!platform.includes('win')) {
+        await execAsync(`chmod +x "${executablePath}"`);
+      }
+
+      // Clean up zip file
+      fs.unlinkSync(zipPath);
+
+      progress.report({ increment: 90, message: "Verifying installation..." });
+
+      // Verify the installation
+      await this.getVersionForPath(executablePath);
+
+      return executablePath;
+    } catch (error) {
+      // Clean up on error
+      if (fs.existsSync(zipPath)) {
+        fs.unlinkSync(zipPath);
+      }
+      if (fs.existsSync(extractDir)) {
+        fs.rmSync(extractDir, { recursive: true, force: true });
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Download a file from a URL
+   */
+  private async downloadFile(url: string, filePath: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const file = fs.createWriteStream(filePath);
+      
+      https.get(url, {
+        headers: {
+          'User-Agent': 'codeql-scanner-vscode'
+        }
+      }, (response) => {
+        // Handle redirects
+        if (response.statusCode === 302 || response.statusCode === 301) {
+          const redirectUrl = response.headers.location;
+          if (redirectUrl) {
+            return this.downloadFile(redirectUrl, filePath).then(resolve).catch(reject);
+          }
+        }
+        
+        if (response.statusCode !== 200) {
+          reject(new Error(`Download failed with status: ${response.statusCode}`));
+          return;
+        }
+        
+        response.pipe(file);
+        
+        file.on('finish', () => {
+          file.close();
+          resolve();
+        });
+        
+        file.on('error', (error) => {
+          fs.unlinkSync(filePath);
+          reject(error);
+        });
+      }).on('error', (error) => {
+        reject(error);
+      });
+    });
+  }
+
+  /**
+   * Get the current platform identifier for CodeQL CLI downloads
+   */
+  private getCurrentPlatform(): string {
+    const platform = os.platform();
+    const arch = os.arch();
+
+    if (platform === 'win32') {
+      return arch === 'x64' ? 'win64' : 'win32';
+    } else if (platform === 'darwin') {
+      return 'osx64';
+    } else if (platform === 'linux') {
+      return arch === 'x64' ? 'linux64' : 'linux';
+    }
+
+    throw new Error(`Unsupported platform: ${platform}-${arch}`);
+  }
+
+  /**
+   * Extract a zip file (simple implementation)
+   */
+  private async extractZip(zipPath: string, extractDir: string): Promise<void> {
+    // For simplicity, we'll use a system command for extraction
+    // In a production environment, you might want to use a proper zip library
+    const platform = os.platform();
+    
+    if (!fs.existsSync(extractDir)) {
+      fs.mkdirSync(extractDir, { recursive: true });
+    }
+
+    if (platform === 'win32') {
+      // Use PowerShell on Windows
+      await execAsync(`powershell -command "Expand-Archive -Path '${zipPath}' -DestinationPath '${extractDir}' -Force"`);
+    } else {
+      // Use unzip on Unix systems
+      await execAsync(`unzip -o "${zipPath}" -d "${extractDir}"`);
+    }
+  }
+
+  /**
+   * Find the CodeQL executable in the extracted directory
+   */
+  private findCodeQLExecutable(dir: string, executableName: string): string | null {
+    try {
+      const files = fs.readdirSync(dir);
+      
+      for (const file of files) {
+        const filePath = path.join(dir, file);
+        const stat = fs.statSync(filePath);
+        
+        if (stat.isDirectory()) {
+          const result = this.findCodeQLExecutable(filePath, executableName);
+          if (result) return result;
+        } else if (file === executableName) {
+          return filePath;
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      return null;
     }
   }
 
@@ -710,21 +1043,57 @@ export class CodeQLService {
   // Local CodeQL CLI methods
   private async checkCodeQLCLI(): Promise<void> {
     const config = vscode.workspace.getConfiguration("codeql-scanner");
-    const codeqlPath = config.get<string>("codeqlPath", "codeql");
+    let codeqlPath = config.get<string>("codeqlPath", "codeql");
 
+    // First try the configured path
     try {
-      const version = await this.getVersion();
-      this.logger.info("CodeQLService", `CodeQL CLI version: ${version}`);
+      const version = await this.getVersionForPath(codeqlPath);
+      this.logger.info("CodeQLService", `CodeQL CLI version: ${version} (path: ${codeqlPath})`);
+      return;
     } catch (error) {
-      this.logger.error(
-        "CodeQLService",
-        `CodeQL CLI not found at '${codeqlPath}'`,
-        error
-      );
-      throw new Error(
-        `CodeQL CLI not found at '${codeqlPath}'. Please install CodeQL CLI and configure the path in settings.`
-      );
+      this.logger.debug("CodeQLService", `CodeQL CLI not found at configured path '${codeqlPath}'`);
     }
+
+    // Try to discover CodeQL from GitHub extension if enabled
+    const autoDetectExtension = config.get<boolean>("autoDetectGitHubExtension", true);
+    if (autoDetectExtension) {
+      try {
+        const discoveredPath = await this.discoverCodeQLFromExtension();
+        if (discoveredPath) {
+          const version = await this.getVersionForPath(discoveredPath);
+          this.logger.info("CodeQLService", `Found CodeQL CLI from GitHub extension: ${version} (path: ${discoveredPath})`);
+          
+          // Update configuration with discovered path
+          await config.update("codeqlPath", discoveredPath, vscode.ConfigurationTarget.Global);
+          return;
+        }
+      } catch (error) {
+        this.logger.debug("CodeQLService", "Could not discover CodeQL from GitHub extension", error);
+      }
+    }
+
+    // Attempt auto-installation if enabled
+    const autoInstall = config.get<boolean>("autoInstallCodeQL", true);
+    if (autoInstall) {
+      try {
+        const installedPath = await this.promptAndInstallCodeQL();
+        if (installedPath) {
+          const version = await this.getVersionForPath(installedPath);
+          this.logger.info("CodeQLService", `Auto-installed CodeQL CLI: ${version} (path: ${installedPath})`);
+          
+          // Update configuration with installed path
+          await config.update("codeqlPath", installedPath, vscode.ConfigurationTarget.Global);
+          return;
+        }
+      } catch (error) {
+        this.logger.error("CodeQLService", "Failed to auto-install CodeQL CLI", error);
+      }
+    }
+
+    // If all attempts failed, throw error
+    const errorMessage = `CodeQL CLI not found. Attempted paths: ${codeqlPath}${autoDetectExtension ? ', CodeQL extension discovery' : ''}${autoInstall ? ', auto-installation' : ''}. Please install CodeQL CLI manually or configure the path in settings.`;
+    this.logger.error("CodeQLService", errorMessage);
+    throw new Error(errorMessage);
   }
 
   private getCodeQLDirectory(): string {

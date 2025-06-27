@@ -75,6 +75,11 @@
                 "category": "CodeQL Scanner"
             },
             {
+                "command": "codeql-scanner.installCodeQL",
+                "title": "CodeQL: Install/Update CLI",
+                "category": "CodeQL Scanner"
+            },
+            {
                 "command": "codeql-scanner.copyFlowPath",
                 "title": "CodeQL: Copy Flow Path",
                 "category": "CodeQL Scanner"
@@ -156,6 +161,12 @@
                     "type": "boolean",
                     "default": true,
                     "description": "Automatically detect and use CodeQL CLI from GitHub.vscode-codeql extension if available",
+                    "scope": "application"
+                },
+                "codeql-scanner.autoInstallCodeQL": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Automatically download and install CodeQL CLI from GitHub if not found",
                     "scope": "application"
                 },
                 "codeql-scanner.useLocalScan": {
