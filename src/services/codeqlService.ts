@@ -136,6 +136,10 @@ export class CodeQLService {
       );
     }
 
+    // Ensure languages are always mapped to CodeQL languages, even if manually configured
+    // This prevents issues where users might manually configure "typescript" instead of "javascript"
+    languages = this.mapLanguagesToCodeQL(languages);
+
     this.logger.info(
       "CodeQLService",
       `Detected languages: [${languages.join(", ")}]`
