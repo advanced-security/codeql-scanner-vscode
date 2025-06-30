@@ -413,6 +413,69 @@ export class CodeQLService {
     return [...new Set(results)]; // Remove any duplicates just in case
   }
 
+  public async getPacks(): Promise<string[]> {
+    this.logger.logServiceCall("CodeQLService", "getPacks", "started");
+    var packs: string[] = [];
+
+    try {
+      const config = vscode.workspace.getConfiguration("codeql-scanner");
+      const codeqlPath = config.get<string>("codeqlPath", "codeql");
+
+      this.logger.info(
+        "CodeQLService",
+        `Getting installed CodeQL packs using CLI at ${codeqlPath}`
+      );
+
+      const cmd = `${codeqlPath} resolve packs --format=json`;
+      this.logger.info(
+        "CodeQLService",
+        `Running command to get installed CodeQL packs: ${cmd}`
+      );
+      const { stdout } = await execAsync(cmd);
+
+      this.logger.info(
+        "CodeQLService",
+        "Successfully retrieved installed CodeQL packs"
+      );
+
+      const packsInfo = JSON.parse(stdout);
+
+      // Reverse steps
+      const steps = packsInfo.steps || [];
+      for (const step of steps.reverse()) {
+        for (const scans of step.scans || []) {
+          const found = scans.found || {};
+          // For each key, add the pack name to the list
+          for (const packName of Object.keys(found)) {
+            if (!packs.includes(packName)) {
+              packs.push(packName);
+
+              this.logger.debug(
+                "CodeQLService",
+                `Found CodeQL pack: ${packName}`
+              );
+            }
+          }
+        }
+      }
+    } catch (error) {
+      this.logger.error("CodeQLService", "Error getting CodeQL packs", error);
+      throw new Error(
+        "Failed to get CodeQL packs. Please check your configuration."
+      );
+    }
+
+    this.logger.info(
+      "CodeQLService",
+      `Found ${packs.length} installed CodeQL packs: ${packs.join(", ")}`
+    );
+
+    this.logger.logServiceCall("CodeQLService", "getPacks", "completed", {
+      packs: packs,
+    });
+    return packs;
+  }
+
   public async runAnalysis(
     progress: vscode.Progress<{ increment?: number; message?: string }>,
     cancellationToken: vscode.CancellationToken
@@ -908,7 +971,7 @@ export class CodeQLService {
 
     // Build the query suite argument
     // var queries = `codeql/${language}-queries`;
-    var queries = this.findQueryPack(language);
+    var queries = await this.findQueryPack(language);
     this.logger.info(
       "CodeQLService",
       `Using query pack: ${queries} for language: ${language}`
@@ -957,34 +1020,46 @@ export class CodeQLService {
     }
   }
 
-  private findQueryPack(language: string): string | undefined {
-    const codeqlDir = this.getCodeQLDirectory();
-    const queryPackPath = path.join(codeqlDir, "packages");
+  private async findQueryPack(language: string): Promise<string | undefined> {
+    try {
+      // Get all installed packs using the getPacks method
+      const installedPacks = await this.getPacks();
 
-    // List all directories in the packages folder
-    if (!fs.existsSync(queryPackPath)) {
-      this.logger.warn(
+      this.logger.info(
         "CodeQLService",
-        `Query pack directory does not exist: ${queryPackPath}`
+        `Looking for ${language} query pack among ${installedPacks.length} installed packs`
       );
-      return undefined;
-    }
 
-    const orgDirs = fs.readdirSync(queryPackPath, { withFileTypes: true });
-    for (const orgDir of orgDirs) {
-      const orgPath = path.join(queryPackPath, orgDir.name);
-      // codeql
-      if (!orgDir.isDirectory()) {
-        continue;
+      // Look for language-specific query pack first
+      const queryPack = installedPacks.find(
+        (pack) =>
+          pack.endsWith(`/${language}-queries`) || // Match org/language-queries format
+          pack === `${language}-queries` // Direct match for language-queries
+      );
+
+      if (queryPack) {
+        this.logger.info(
+          "CodeQLService",
+          `Found query pack for ${language}: ${queryPack}`
+        );
+        return queryPack;
       }
 
-      for (const packDir of fs.readdirSync(orgPath, { withFileTypes: true })) {
-        if (packDir.isDirectory() && packDir.name === `${language}-queries`) {
-          return `${orgDir.name}/${packDir.name}`;
-        }
-      }
+      // Look for the default codeql pack if no specific pack is found
+      const defaultPack = `codeql/${language}-queries`;
+      this.logger.info(
+        "CodeQLService",
+        `No specific query pack found for ${language}, using default: ${defaultPack}`
+      );
+      return defaultPack; // Fallback to default pack
+    } catch (error) {
+      this.logger.error(
+        "CodeQLService",
+        `Error finding query pack for ${language}`,
+        error
+      );
+      return `codeql/${language}-queries`; // Fallback to default pack on error
     }
-    return `codeql/${language}-queries`; // Fallback to default pack
   }
 
   private parseSARIFResults(
