@@ -157,6 +157,12 @@
                     "description": "Path to the CodeQL CLI executable",
                     "scope": "application"
                 },
+                "codeql-scanner.codeqlQueryPackPath": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Path to where the CodeQL query packs are stored",
+                    "scope": "application"
+                },
                 "codeql-scanner.autoDetectGitHubExtension": {
                     "type": "boolean",
                     "default": true,

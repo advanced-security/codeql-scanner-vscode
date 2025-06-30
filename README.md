@@ -17,6 +17,9 @@
 
 Seamlessly integrate GitHub's powerful CodeQL scanning engine directly into your VS Code workflow. Detect vulnerabilities, find security flaws, and improve code quality without leaving your editor.
 
+> [!NOTE]
+> This is **not** an offical GitHub project
+
 ## ✨ Key Features
 
 - **🛡️ Instant Security Analysis**: Scan your code for vulnerabilities directly from VSCode
