@@ -2,7 +2,7 @@
     "name": "codeql-scanner-vscode",
     "displayName": "CodeQL Scanner",
     "description": "VSCode extension for CodeQL to scan and analyze code for vulnerabilities using GitHub's CodeQL.",
-    "version": "0.1.1",
+    "version": "0.1.2",
     "repository": {
         "type": "git",
         "url": "https://github.com/geekmasher/codeql-scanner-vscode.git"
