@@ -971,7 +971,7 @@ export class CodeQLService {
 
     // Build the query suite argument
     // var queries = `codeql/${language}-queries`;
-    var queries = await this.findQueryPack(language);
+    const queries = await this.findQueryPack(language);
     this.logger.info(
       "CodeQLService",
       `Using query pack: ${queries} for language: ${language}`
