@@ -2499,9 +2499,10 @@ export class UiProvider implements vscode.WebviewViewProvider {
           </div>
       </div>
 
-      <div class="section">
-          <h3>🔍 Scan Configuration</h3>
-          <div class="form-group">
+      <div class="section" id="scan-configuration">
+          <h3 class="collapsible-header collapsed" onclick="toggleScanConfigSection()">🔍 Scan Configuration <span class="toggle-icon">▼</span></h3>
+          <div id="scan-config-content" class="collapsible-content collapsed">
+            <div class="form-group">
               <label for="suites">Query Suite:</label>
               <div id="suitesContainer">
                   <div class="suite-radio">
@@ -2550,10 +2551,12 @@ export class UiProvider implements vscode.WebviewViewProvider {
               </div>
               <div class="help-text">Select the threat model to focus the analysis on specific security scenarios</div>
           </div>
+          </div>
       </div>
-      <div class="section scan-section">
-          <h3>🔤 Language Selection</h3>
-          <div class="form-group">
+      <div class="section" id="languages-selection">
+          <h3 class="collapsible-header collapsed" onclick="toggleLanguageSection()">🔤 Language Selection <span class="toggle-icon">▼</span></h3>
+          <div id="language-content" class="collapsible-content collapsed">
+            <div class="form-group">
               <label for="languages">Programming Languages:</label>
               <div id="languagesContainer">
                   <div id="languagesList" style="display: none;">
@@ -2567,6 +2570,7 @@ export class UiProvider implements vscode.WebviewViewProvider {
                   </div>
               </div>
               <div class="help-text">Select the programming languages to analyze. Languages are auto-detected from your CodeQL CLI installation.</div>
+            </div>
           </div>
       </div>
     </div>
@@ -2855,10 +2859,17 @@ export class UiProvider implements vscode.WebviewViewProvider {
             
             // Get references to the sections we need to show/hide
             const scanSettings = document.getElementById('scanSettings');
+            const securityDashboard = document.getElementById('summarySection');
+            const scanConfiguration = document.getElementById('scan-configuration');
+            const scanConfigContent = document.getElementById('scan-config-content');
+            const scanConfigHeader = document.querySelector('#scan-configuration h3');
+            const languageSection = document.getElementById('languages-selection');
+            const languageContent = document.getElementById('language-content');
+            const languageHeader = document.querySelector('#languages-selection h3');
             
             if (success) {
                 if (enabled) {
-                    // CodeQL is enabled - collapse the repository section
+                    // CodeQL is enabled
                     statusMessage.style.backgroundColor = 'rgba(40, 167, 69, 0.1)';
                     statusMessage.style.border = '1px solid #28a745';
                     statusMessage.style.color = '#28a745';
@@ -2870,19 +2881,27 @@ export class UiProvider implements vscode.WebviewViewProvider {
                     
                     // Show all CodeQL-dependent sections
                     if (scanSettings) scanSettings.style.display = 'block';
+                    if (securityDashboard) securityDashboard.style.display = 'block';
+                    if (scanConfiguration) scanConfiguration.style.display = 'block';
+                    if (languageSection) languageSection.style.display = 'block';
+                    
+                    // Keep sections collapsed by default, but make them visible
+                    if (scanConfigHeader) scanConfigHeader.classList.add('collapsed');
+                    if (scanConfigContent) scanConfigContent.classList.add('collapsed');
+                    if (languageHeader) languageHeader.classList.add('collapsed');
+                    if (languageContent) languageContent.classList.add('collapsed');
                 } else {
-                    // CodeQL is not enabled - expand the repository section
+                    // CodeQL is not enabled
                     statusMessage.style.backgroundColor = 'rgba(255, 193, 7, 0.1)';
                     statusMessage.style.border = '1px solid #ffc107';
                     statusMessage.style.color = '#ffc107';
                     statusMessage.innerHTML = '⚠️ ' + message + '<br><small>You must enable CodeQL in repository settings before scanning.</small>';
                     
-                    // Expand the repository section to allow user to fix configuration
-                    if (repoHeader) repoHeader.classList.remove('collapsed');
-                    if (repoContent) repoContent.classList.remove('collapsed');
-                    
                     // Hide CodeQL-dependent sections
                     if (scanSettings) scanSettings.style.display = 'none';
+                    if (securityDashboard) securityDashboard.style.display = 'none';
+                    if (scanConfiguration) scanConfiguration.style.display = 'none';
+                    if (languageSection) languageSection.style.display = 'none';
                 }
             } else {
                 // Error checking CodeQL status
@@ -2890,6 +2909,12 @@ export class UiProvider implements vscode.WebviewViewProvider {
                 statusMessage.style.border = '1px solid #dc3545';
                 statusMessage.style.color = '#dc3545';
                 statusMessage.innerHTML = '❌ ' + message;
+                
+                // Hide CodeQL-dependent sections on error
+                if (scanSettings) scanSettings.style.display = 'none';
+                if (securityDashboard) securityDashboard.style.display = 'none';
+                if (scanConfiguration) scanConfiguration.style.display = 'none';
+                if (languageSection) languageSection.style.display = 'none';
                 
                 // Expand the repository section to allow user to fix configuration
                 if (repoHeader) repoHeader.classList.remove('collapsed');
@@ -2928,6 +2953,26 @@ export class UiProvider implements vscode.WebviewViewProvider {
             if (repoHeader && repoContent) {
                 repoHeader.classList.toggle('collapsed');
                 repoContent.classList.toggle('collapsed');
+            }
+        }
+        
+        function toggleScanConfigSection() {
+            const configHeader = document.querySelector('#scan-configuration h3');
+            const configContent = document.getElementById('scan-config-content');
+            
+            if (configHeader && configContent) {
+                configHeader.classList.toggle('collapsed');
+                configContent.classList.toggle('collapsed');
+            }
+        }
+        
+        function toggleLanguageSection() {
+            const langHeader = document.querySelector('#languages-selection h3');
+            const langContent = document.getElementById('language-content');
+            
+            if (langHeader && langContent) {
+                langHeader.classList.toggle('collapsed');
+                langContent.classList.toggle('collapsed');
             }
         }
         
