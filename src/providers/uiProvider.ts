@@ -1196,18 +1196,16 @@ export class UiProvider implements vscode.WebviewViewProvider {
         // Convert web URL to API URL
         let apiUrl = "https://api.github.com"; // Default API URL
         
-        if (url) {
-          if (url === "github.com" || url === "https://github.com") {
-            apiUrl = "https://api.github.com";
-          } else {
-            // Remove https:// prefix if present
-            const cleanUrl = url.replace(/^https?:\/\//, '');
-            
-            // For GitHub Enterprise, convert to API URL
-            apiUrl = `https://${cleanUrl}`;
-            if (!apiUrl.includes('/api/v3')) {
-              apiUrl = apiUrl.endsWith('/') ? `${apiUrl}api/v3` : `${apiUrl}/api/v3`;
-            }
+        if (url === "github.com" || url === "https://github.com") {
+          apiUrl = "https://api.github.com";
+        } else {
+          // Remove https:// prefix if present
+          const cleanUrl = url.replace(/^https?:\/\//, '');
+          
+          // For GitHub Enterprise, convert to API URL
+          apiUrl = `https://${cleanUrl}`;
+          if (!apiUrl.includes('/api/v3')) {
+            apiUrl = apiUrl.endsWith('/') ? `${apiUrl}api/v3` : `${apiUrl}/api/v3`;
           }
         }
         
