@@ -5,6 +5,9 @@ applyTo: '**/*.ts'
 You are building a VSCode Extension that integrates with CodeQL to scan code for vulnerabilities.
 The extension provides functionality to scan code for vulnerabilities using CodeQL.
 
+All code must be written to support Linux, Macos, and Windows.
+This includes path manipulation, command running, etc.
+
 Always use the logging functionality provided by the extension's `logger` module for consistent logging across the extension.
 Always log actions that modify the state of the extension, such as configuration changes, CLI path updates, or user interactions.
 
