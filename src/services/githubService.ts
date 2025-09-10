@@ -273,6 +273,48 @@ export class GitHubService {
     }
   }
 
+  /**
+   * Check if CodeQL is enabled for a repository
+   * @param owner Repository owner
+   * @param repo Repository name
+   * @returns Promise resolving to true if CodeQL is enabled, false otherwise
+   */
+  public async isCodeQLEnabled(owner: string, repo: string): Promise<boolean> {
+    this.logger.logServiceCall("GitHubService", "isCodeQLEnabled", "started", {
+      owner,
+      repo,
+    });
+
+    if (!this.octokit) {
+      this.logger.warn(
+        "GitHubService",
+        "GitHub token not configured for checking CodeQL status"
+      );
+      return false;
+    }
+
+    try {
+      const codeqlStatus = await this.getCodeQLStatus(owner, repo);
+      
+      this.logger.logServiceCall(
+        "GitHubService", 
+        "isCodeQLEnabled", 
+        "completed", 
+        { owner, repo, enabled: codeqlStatus }
+      );
+      
+      return codeqlStatus;
+    } catch (error) {
+      this.logger.logServiceCall(
+        "GitHubService", 
+        "isCodeQLEnabled", 
+        "failed", 
+        error
+      );
+      return false;
+    }
+  }
+
   public async triggerCodeQLScan(
     owner: string,
     repo: string,
