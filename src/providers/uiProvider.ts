@@ -1628,6 +1628,37 @@ export class UiProvider implements vscode.WebviewViewProvider {
             color: var(--vscode-foreground);
         }
         
+        /* Collapsible section styles */
+        .collapsible-header {
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 5px 0;
+            user-select: none;
+        }
+        
+        .collapsible-header .toggle-icon {
+            transition: transform 0.3s ease;
+            margin-left: 8px;
+            font-size: 12px;
+        }
+        
+        .collapsible-header.collapsed .toggle-icon {
+            transform: rotate(-90deg);
+        }
+        
+        .collapsible-content {
+            max-height: 1000px;
+            overflow: hidden;
+            transition: max-height 0.4s ease;
+        }
+        
+        .collapsible-content.collapsed {
+            max-height: 0;
+            overflow: hidden;
+        }
+        
         #message {
             margin-top: 15px;
             padding: 10px;
@@ -2317,157 +2348,161 @@ export class UiProvider implements vscode.WebviewViewProvider {
         </div>
     </div>
 
-    <div class="section" id="repo-settings">
-        <h3>🔗 GitHub Repository</h3>
+    <div class="section" id="repo-settings" style="display: block;">
+        <h3 class="collapsible-header" onclick="toggleRepoSection()">🔗 GitHub Repository <span class="toggle-icon">▼</span></h3>
         <div id="codeqlStatusMessage" style="margin-bottom: 15px; padding: 10px; border-radius: 6px; display: none;">
             <!-- CodeQL status will be shown here -->
         </div>
         
-        <div class="form-group">
-            <label for="githubOwner">Repository Owner/Organization:</label>
-            <input type="text" id="githubOwner" placeholder="e.g., octocat">
-        </div>
-        
-        <div class="form-group">
-            <label for="githubRepo">Repository Name:</label>
-            <input type="text" id="githubRepo" placeholder="e.g., hello-world">
-        </div>
-        
-        <div class="form-group">
-            <button onclick="updateRepositoryInfo()" id="updateRepoButton" class="action-button" style="min-width: auto; padding: 12px 20px; font-size: 13px;">
-                <span class="update-icon">💾</span>
-                <span>Update Repository Info</span>
-            </button>
-            <button onclick="checkCodeQLEnabled()" id="checkCodeQLButton" class="action-button" style="min-width: auto; padding: 12px 20px; font-size: 13px; margin-left: 5px;">
-                <span class="check-icon">✓</span>
-                <span>Check CodeQL Status</span>
-            </button>
-        </div>
-        <div class="help-text">Configure GitHub repository details to enable CodeQL scanning</div>
-    </div>
-
-    <div class="section" id="summarySection" style="display: none;">
-        <h3>🔒 Security Dashboard</h3>
-        <div class="summary-section">
-            <div class="summary-grid">
-                <div class="summary-card">
-                    <div class="summary-number" id="totalAlerts">0</div>
-                    <div class="summary-label">Total</div>
-                </div>
-                <div class="summary-card critical">
-                    <div class="summary-number severity-critical" id="criticalAlerts">0</div>
-                    <div class="summary-label">Critical</div>
-                </div>
-                <div class="summary-card high">
-                    <div class="summary-number severity-high" id="highAlerts">0</div>
-                    <div class="summary-label">High</div>
-                </div>
-                <div class="summary-card medium">
-                    <div class="summary-number severity-medium" id="mediumAlerts">0</div>
-                    <div class="summary-label">Medium</div>
-                </div>
-                <div class="summary-card low">
-                    <div class="summary-number severity-low" id="lowAlerts">0</div>
-                    <div class="summary-label">Low</div>
-                </div>
+        <div id="repo-content" class="collapsible-content">
+            <div class="form-group">
+                <label for="githubOwner">Repository Owner/Organization:</label>
+                <input type="text" id="githubOwner" placeholder="e.g., octocat">
             </div>
-
-            <div id="detailsSection" style="display: none;">
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                    <div class="top-items">
-                        <h4>🎯 Top Vulnerabilities</h4>
-                        <ul class="top-list" id="topRules"></ul>
-                    </div>
-                    
-                    <div class="top-items">
-                        <h4>📄 Affected Files</h4>
-                        <ul class="top-list" id="topFiles"></ul>
-                    </div>
-                </div>
-                
-                <div class="top-items" style="margin-top: 10px; text-align: center;">
-                    <small style="color: var(--vscode-descriptionForeground); font-size: 10px; opacity: 0.7;">
-                        Last scan: <span id="scanDate" style="font-weight: 600;">Never</span>
-                    </small>
-                </div>
             
-            <div id="noResultsMessage" class="no-results">
-                <div style="font-size: 14px; margin-bottom: 4px;">🛡️</div>
-                <div style="font-size: 12px; opacity: 0.8;">No security alerts detected</div>
-                <div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">Run a scan to analyze your code</div>
+            <div class="form-group">
+                <label for="githubRepo">Repository Name:</label>
+                <input type="text" id="githubRepo" placeholder="e.g., hello-world">
             </div>
+            
+            <div class="form-group">
+                <button onclick="updateRepositoryInfo()" id="updateRepoButton" class="action-button" style="min-width: auto; padding: 12px 20px; font-size: 13px;">
+                    <span class="update-icon">💾</span>
+                    <span>Update Repository Info</span>
+                </button>
+                <button onclick="checkCodeQLEnabled()" id="checkCodeQLButton" class="action-button" style="min-width: auto; padding: 12px 20px; font-size: 13px; margin-left: 5px;">
+                    <span class="check-icon">✓</span>
+                    <span>Check CodeQL Status</span>
+                </button>
+            </div>
+            <div class="help-text">Configure GitHub repository details to enable CodeQL scanning</div>
         </div>
     </div>
 
-    <div class="section" id="scan-configuration">
-        <h3>🔍 Scan Configuration</h3>
-        <div class="form-group">
-            <label for="suites">Query Suite:</label>
-            <div id="suitesContainer">
-                <div class="suite-radio">
-                    <input type="radio" id="suite-default" name="suite" value="default">
-                    <label for="suite-default">
-                        <span class="suite-name">Default</span>
-                        <span class="suite-description">Basic code scanning queries for CI/CD</span>
-                    </label>
-                </div>
-                <div class="suite-radio">
-                    <input type="radio" id="suite-security-extended" name="suite" value="security-extended">
-                    <label for="suite-security-extended">
-                        <span class="suite-name">Security Extended</span>
-                        <span class="suite-description">Extended security queries with additional checks</span>
-                    </label>
-                </div>
-                <div class="suite-radio">
-                    <input type="radio" id="suite-security-and-quality" name="suite" value="security-and-quality">
-                    <label for="suite-security-and-quality">
-                        <span class="suite-name">Security and Quality</span>
-                        <span class="suite-description">Security queries plus code quality checks</span>
-                    </label>
-                </div>
-                
-            </div>
-            <div class="help-text">Select the CodeQL query suite to run during analysis</div>
-        </div>
-        
-        <div class="form-group">
-            <label for="threatModel">Threat Model:</label>
-            <div id="threatModelContainer">
-                <div class="suite-radio">
-                    <input type="radio" id="threat-remote" name="threatModel" value="Remote">
-                    <label for="threat-remote">
-                        <span class="suite-name">Remote</span>
-                        <span class="suite-description">Analyze threats from external attackers and remote code execution</span>
-                    </label>
-                </div>
-                <div class="suite-radio">
-                    <input type="radio" id="threat-local" name="threatModel" value="Local">
-                    <label for="threat-local">
-                        <span class="suite-name">Local</span>
-                        <span class="suite-description">Focus on local threats and privilege escalation scenarios</span>
-                    </label>
-                </div>
-            </div>
-            <div class="help-text">Select the threat model to focus the analysis on specific security scenarios</div>
-        </div>
-    </div>
-    <div class="section scan-section" id="languages-selection">
-        <h3>🔤 Language Selection</h3>
-        <div class="form-group">
-            <label for="languages">Programming Languages:</label>
-            <div id="languagesContainer">
-                <div id="languagesList" style="display: none;">
-                    <!-- Language checkboxes will be populated here -->
-                </div>
-                <div style="margin-bottom: 20px;">
-                    <button onclick="loadSupportedLanguages()" id="loadLanguagesButton" type="button" class="action-button futuristic-load-btn" style="min-width: auto; padding: 12px 20px; font-size: 13px;">
-                        <span class="load-icon">🔄</span>
-                        <span>Load Available Languages</span>
-                    </button>
-                </div>
-            </div>
-            <div class="help-text">Select the programming languages to analyze. Languages are auto-detected from your CodeQL CLI installation.</div>
-        </div>
+    <div id="scanSettings" style="display: none;">
+      <div class="section" id="summarySection">
+          <h3>🔒 Security Dashboard</h3>
+          <div class="summary-section">
+              <div class="summary-grid">
+                  <div class="summary-card">
+                      <div class="summary-number" id="totalAlerts">0</div>
+                      <div class="summary-label">Total</div>
+                  </div>
+                  <div class="summary-card critical">
+                      <div class="summary-number severity-critical" id="criticalAlerts">0</div>
+                      <div class="summary-label">Critical</div>
+                  </div>
+                  <div class="summary-card high">
+                      <div class="summary-number severity-high" id="highAlerts">0</div>
+                      <div class="summary-label">High</div>
+                  </div>
+                  <div class="summary-card medium">
+                      <div class="summary-number severity-medium" id="mediumAlerts">0</div>
+                      <div class="summary-label">Medium</div>
+                  </div>
+                  <div class="summary-card low">
+                      <div class="summary-number severity-low" id="lowAlerts">0</div>
+                      <div class="summary-label">Low</div>
+                  </div>
+              </div>
+
+              <div id="detailsSection" style="display: none;">
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                      <div class="top-items">
+                          <h4>🎯 Top Vulnerabilities</h4>
+                          <ul class="top-list" id="topRules"></ul>
+                      </div>
+                      
+                      <div class="top-items">
+                          <h4>📄 Affected Files</h4>
+                          <ul class="top-list" id="topFiles"></ul>
+                      </div>
+                  </div>
+                  
+                  <div class="top-items" style="margin-top: 10px; text-align: center;">
+                      <small style="color: var(--vscode-descriptionForeground); font-size: 10px; opacity: 0.7;">
+                          Last scan: <span id="scanDate" style="font-weight: 600;">Never</span>
+                      </small>
+                  </div>
+              
+              <div id="noResultsMessage" class="no-results">
+                  <div style="font-size: 14px; margin-bottom: 4px;">🛡️</div>
+                  <div style="font-size: 12px; opacity: 0.8;">No security alerts detected</div>
+                  <div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">Run a scan to analyze your code</div>
+              </div>
+          </div>
+      </div>
+
+      <div class="section">
+          <h3>🔍 Scan Configuration</h3>
+          <div class="form-group">
+              <label for="suites">Query Suite:</label>
+              <div id="suitesContainer">
+                  <div class="suite-radio">
+                      <input type="radio" id="suite-default" name="suite" value="default">
+                      <label for="suite-default">
+                          <span class="suite-name">Default</span>
+                          <span class="suite-description">Basic code scanning queries for CI/CD</span>
+                      </label>
+                  </div>
+                  <div class="suite-radio">
+                      <input type="radio" id="suite-security-extended" name="suite" value="security-extended">
+                      <label for="suite-security-extended">
+                          <span class="suite-name">Security Extended</span>
+                          <span class="suite-description">Extended security queries with additional checks</span>
+                      </label>
+                  </div>
+                  <div class="suite-radio">
+                      <input type="radio" id="suite-security-and-quality" name="suite" value="security-and-quality">
+                      <label for="suite-security-and-quality">
+                          <span class="suite-name">Security and Quality</span>
+                          <span class="suite-description">Security queries plus code quality checks</span>
+                      </label>
+                  </div>
+                  
+              </div>
+              <div class="help-text">Select the CodeQL query suite to run during analysis</div>
+          </div>
+          
+          <div class="form-group">
+              <label for="threatModel">Threat Model:</label>
+              <div id="threatModelContainer">
+                  <div class="suite-radio">
+                      <input type="radio" id="threat-remote" name="threatModel" value="Remote">
+                      <label for="threat-remote">
+                          <span class="suite-name">Remote</span>
+                          <span class="suite-description">Analyze threats from external attackers and remote code execution</span>
+                      </label>
+                  </div>
+                  <div class="suite-radio">
+                      <input type="radio" id="threat-local" name="threatModel" value="Local">
+                      <label for="threat-local">
+                          <span class="suite-name">Local</span>
+                          <span class="suite-description">Focus on local threats and privilege escalation scenarios</span>
+                      </label>
+                  </div>
+              </div>
+              <div class="help-text">Select the threat model to focus the analysis on specific security scenarios</div>
+          </div>
+      </div>
+      <div class="section scan-section">
+          <h3>🔤 Language Selection</h3>
+          <div class="form-group">
+              <label for="languages">Programming Languages:</label>
+              <div id="languagesContainer">
+                  <div id="languagesList" style="display: none;">
+                      <!-- Language checkboxes will be populated here -->
+                  </div>
+                  <div style="margin-bottom: 20px;">
+                      <button onclick="loadSupportedLanguages()" id="loadLanguagesButton" type="button" class="action-button futuristic-load-btn" style="min-width: auto; padding: 12px 20px; font-size: 13px;">
+                          <span class="load-icon">🔄</span>
+                          <span>Load Available Languages</span>
+                      </button>
+                  </div>
+              </div>
+              <div class="help-text">Select the programming languages to analyze. Languages are auto-detected from your CodeQL CLI installation.</div>
+          </div>
+      </div>
     </div>
 
     <div id="message"></div>
@@ -2741,23 +2776,54 @@ export class UiProvider implements vscode.WebviewViewProvider {
             const statusMessage = document.getElementById('codeqlStatusMessage');
             statusMessage.style.display = 'block';
             
+            // Get references to the repository section elements
+            const repoHeader = document.querySelector('#repo-settings h3');
+            const repoContent = document.getElementById('repo-content');
+            
+            // Get references to the sections we need to show/hide
+            const scanSettings = document.getElementById('scanSettings');
+            
             if (success) {
                 if (enabled) {
+                    // CodeQL is enabled - collapse the repository section
                     statusMessage.style.backgroundColor = 'rgba(40, 167, 69, 0.1)';
                     statusMessage.style.border = '1px solid #28a745';
                     statusMessage.style.color = '#28a745';
                     statusMessage.innerHTML = '✅ ' + message;
+                    
+                    // Collapse the repository section since it's configured correctly
+                    if (repoHeader) repoHeader.classList.add('collapsed');
+                    if (repoContent) repoContent.classList.add('collapsed');
+                    
+                    // Show all CodeQL-dependent sections
+                    if (scanSettings) scanSettings.style.display = 'block';
                 } else {
+                    // CodeQL is not enabled - expand the repository section
                     statusMessage.style.backgroundColor = 'rgba(255, 193, 7, 0.1)';
                     statusMessage.style.border = '1px solid #ffc107';
                     statusMessage.style.color = '#ffc107';
                     statusMessage.innerHTML = '⚠️ ' + message + '<br><small>You must enable CodeQL in repository settings before scanning.</small>';
+                    
+                    // Expand the repository section to allow user to fix configuration
+                    if (repoHeader) repoHeader.classList.remove('collapsed');
+                    if (repoContent) repoContent.classList.remove('collapsed');
+                    
+                    // Hide CodeQL-dependent sections
+                    if (scanSettings) scanSettings.style.display = 'none';
                 }
             } else {
+                // Error checking CodeQL status
                 statusMessage.style.backgroundColor = 'rgba(220, 53, 69, 0.1)';
                 statusMessage.style.border = '1px solid #dc3545';
                 statusMessage.style.color = '#dc3545';
                 statusMessage.innerHTML = '❌ ' + message;
+                
+                // Expand the repository section to allow user to fix configuration
+                if (repoHeader) repoHeader.classList.remove('collapsed');
+                if (repoContent) repoContent.classList.remove('collapsed');
+                
+                // Hide CodeQL-dependent sections
+                if (scanSettings) scanSettings.style.display = 'none';
             }
             
             // Reset check button
@@ -2780,6 +2846,16 @@ export class UiProvider implements vscode.WebviewViewProvider {
         
         function testConnection() {
             vscode.postMessage({ command: 'testConnection' });
+        }
+        
+        function toggleRepoSection() {
+            const repoHeader = document.querySelector('#repo-settings h3');
+            const repoContent = document.getElementById('repo-content');
+            
+            if (repoHeader && repoContent) {
+                repoHeader.classList.toggle('collapsed');
+                repoContent.classList.toggle('collapsed');
+            }
         }
         
         function runLocalScan() {
@@ -2962,6 +3038,15 @@ export class UiProvider implements vscode.WebviewViewProvider {
                         setSelectedLanguages(config.languages);
                     } else {
                         console.log('No languages found in config, defaulting to empty selection');
+                    }
+                    
+                    // Check CodeQL status automatically if repository is configured
+                    if (config.githubOwner && config.githubRepo) {
+                        setRepositoryInfo(config.githubOwner, config.githubRepo);
+                        setTimeout(() => {
+                            // Trigger a check to properly set repository section visibility
+                            checkCodeQLEnabled();
+                        }, 500);
                     }
                     break;
 
@@ -3167,6 +3252,16 @@ export class UiProvider implements vscode.WebviewViewProvider {
                     break;
             }
         });
+        
+        // Initialize repository section (expanded by default)
+        const repoHeader = document.querySelector('#repo-settings h3');
+        const repoContent = document.getElementById('repo-content');
+        
+        if (repoHeader && repoContent) {
+            // Start with repository section expanded
+            repoHeader.classList.remove('collapsed');
+            repoContent.classList.remove('collapsed');
+        }
         
         // Load configuration on startup
         loadConfig();
