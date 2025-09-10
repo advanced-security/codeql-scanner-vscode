@@ -54,6 +54,9 @@ export class UiProvider implements vscode.WebviewViewProvider {
           case "loadConfig":
             this.loadConfiguration();
             break;
+          case "loginWithGitHub":
+            this.loginWithGitHub();
+            break;
           case "testConnection":
             this.testGitHubConnection();
             break;
@@ -164,6 +167,26 @@ export class UiProvider implements vscode.WebviewViewProvider {
       );
     }
     this.logger.info("UiProvider", `Using threat model: ${threatModel}`);
+
+    // Check GitHub auth status
+    try {
+      const authStatus = await this._githubService.checkGitHubAuth();
+
+      // Send auth status to the WebUI
+      this._view?.webview.postMessage({
+        command: "authStatus",
+        isAuthenticated: authStatus.isAuthenticated,
+        displayName: authStatus.displayName
+      });
+
+      if (authStatus.isAuthenticated) {
+        this.logger.info("UiProvider", `User is authenticated with GitHub as: ${authStatus.displayName}`);
+      } else {
+        this.logger.info("UiProvider", "User is not authenticated with GitHub");
+      }
+    } catch (error) {
+      this.logger.warn("UiProvider", "Failed to check GitHub authentication status", error);
+    }
 
     // Auto-select GitHub repository languages if no manual selection exists
     let languages = config.get<string[]>("languages", []);
@@ -593,6 +616,70 @@ export class UiProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  private async loginWithGitHub() {
+    this.logger.logServiceCall("UiProvider", "loginWithGitHub", "started");
+    
+    try {
+      // Update UI to show authentication is in progress
+      this._view?.webview.postMessage({
+        command: "authStarted",
+        message: "GitHub authentication in progress..."
+      });
+      
+      // Call GitHub Service to authenticate
+      const success = await this._githubService.authenticateWithGitHub();
+      
+      if (success) {
+        this.logger.logServiceCall("UiProvider", "loginWithGitHub", "completed");
+        
+        try {
+          // Try to get repository info with the new token
+          const repoInfo = await this._githubService.getRepositoryInfo();
+          const config = vscode.workspace.getConfiguration("codeql-scanner");
+          const token = config.get<string>("github.token");
+          
+          // Update UI with authentication status
+          this._view?.webview.postMessage({
+            command: "authCompleted",
+            success: true,
+            message: "Successfully authenticated with GitHub",
+            config: {
+              githubToken: token,
+              githubOwner: repoInfo.owner,
+              githubRepo: repoInfo.repo,
+            }
+          });
+        } catch (repoError) {
+          // Still authenticated but couldn't get repo info
+          this.logger.warn("UiProvider", "Authenticated but couldn't get repository info", repoError);
+          
+          this._view?.webview.postMessage({
+            command: "authCompleted",
+            success: true,
+            message: "Successfully authenticated with GitHub, but couldn't retrieve repository information.",
+          });
+        }
+        
+        // Reload the configuration to update the UI
+        this.loadConfiguration();
+      } else {
+        this.logger.logServiceCall("UiProvider", "loginWithGitHub", "failed");
+        this._view?.webview.postMessage({
+          command: "authCompleted",
+          success: false,
+          message: "GitHub authentication failed or was cancelled.",
+        });
+      }
+    } catch (error) {
+      this.logger.logServiceCall("UiProvider", "loginWithGitHub", "failed", error);
+      this._view?.webview.postMessage({
+        command: "authCompleted",
+        success: false,
+        message: `GitHub authentication failed: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+  }
+
   private mapGitHubSeverityToLocal(severity?: string): string {
     if (!severity) return "medium";
 
@@ -925,6 +1012,44 @@ export class UiProvider implements vscode.WebviewViewProvider {
         @keyframes pulse {
             0%, 100% { opacity: 1; transform: scale(1); }
             50% { opacity: 0.7; transform: scale(1.05); }
+        }
+
+        /* GitHub Login Button */
+        .github-login-btn {
+            background: linear-gradient(135deg, #2F4858 0%, #333 100%);
+            color: white;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+            position: relative;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .github-login-btn.authenticated {
+            background: linear-gradient(135deg, #28a745 0%, #22863a 100%);
+            border: 1px solid rgba(40, 167, 69, 0.5);
+            box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
+        }
+
+        .github-login-btn:hover:not(:disabled) {
+            background: linear-gradient(135deg, #24292e 0%, #1b1f23 100%);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+        }
+        
+        .github-login-btn.authenticated:hover:not(:disabled) {
+            background: linear-gradient(135deg, #22863a 0%, #1e7e34 100%);
+            box-shadow: 0 6px 20px rgba(40, 167, 69, 0.4);
+        }
+
+        .github-login-btn:disabled {
+            background: linear-gradient(135deg, #9ca3af 0%, #6b7280 100%);
+        }
+
+        .github-icon {
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+
+        .github-login-btn:hover:not(:disabled) .github-icon {
+            transform: scale(1.1);
         }
 
         /* Fetch Remote Button */
@@ -1842,6 +1967,12 @@ export class UiProvider implements vscode.WebviewViewProvider {
         <h3>🚀 Actions</h3>
         <div class="button-group">
             <div class="button-row">
+                <button onclick="loginWithGitHub()" id="loginButton" class="action-button github-login-btn">
+                    <span class="github-icon">G</span>
+                    <span>Sign in with GitHub</span>
+                </button>
+            </div>
+            <div class="button-row">
                 <button onclick="runLocalScan()" id="scanButton" class="action-button">
                     <span class="scan-icon">🔍</span>
                     <span>Run Local CodeQL Scanner</span>
@@ -2212,6 +2343,55 @@ export class UiProvider implements vscode.WebviewViewProvider {
             vscode.postMessage({ command: 'testConnection' });
         }
         
+        function updateLoginButtonState(isAuthenticated, displayName) {
+            const loginButton = document.getElementById('loginButton');
+            if (!loginButton) return;
+            
+            const loginIcon = loginButton.querySelector('.github-icon');
+            const loginText = loginButton.querySelector('span:last-child');
+            
+            if (isAuthenticated) {
+                loginIcon.textContent = '✓';
+                if (displayName) {
+                    loginText.textContent = 'Signed in as ' + displayName;
+                } else {
+                    loginText.textContent = 'Signed in to GitHub';
+                }
+                loginButton.classList.add('authenticated');
+                
+                // Change button action to log out or switch accounts
+                loginButton.onclick = function() {
+                    // Just trigger login again - VS Code will handle account selection
+                    loginWithGitHub();
+                };
+            } else {
+                loginIcon.textContent = 'G';
+                loginText.textContent = 'Sign in with GitHub';
+                loginButton.classList.remove('authenticated');
+                
+                // Reset button action to login
+                loginButton.onclick = function() {
+                    loginWithGitHub();
+                };
+            }
+        }
+        
+        function loginWithGitHub() {
+            const loginButton = document.getElementById('loginButton');
+            if (loginButton) {
+                loginButton.disabled = true;
+                loginButton.classList.add('loading');
+                
+                // Update text and icon
+                const loginIcon = loginButton.querySelector('.github-icon');
+                const loginText = loginButton.querySelector('span:last-child');
+                loginIcon.textContent = '...';
+                loginText.textContent = 'Authenticating...';
+            }
+            
+            vscode.postMessage({ command: 'loginWithGitHub' });
+        }
+        
         function runLocalScan() {
             const scanButton = document.getElementById('scanButton');
             scanButton.disabled = true;
@@ -2452,6 +2632,53 @@ export class UiProvider implements vscode.WebviewViewProvider {
                     
                 case 'connectionTest':
                     showMessage(message.message, !message.success);
+                    break;
+                    
+                case 'authStarted':
+                    showMessage(message.message, false);
+                    break;
+                    
+                case 'authStatus':
+                    updateLoginButtonState(message.isAuthenticated, message.displayName);
+                    break;
+                    
+                case 'authCompleted':
+                    const loginButton = document.getElementById('loginButton');
+                    if (loginButton) {
+                        loginButton.disabled = false;
+                        loginButton.classList.remove('loading');
+                        
+                        // Add success or error animation
+                        if (message.success) {
+                            loginButton.classList.add('success');
+                            setTimeout(() => loginButton.classList.remove('success'), 600);
+                            
+                            // Update the button to show logged-in state
+                            updateLoginButtonState(true, message.config?.githubOwner);
+                        } else {
+                            loginButton.classList.add('error');
+                            setTimeout(() => loginButton.classList.remove('error'), 600);
+                            
+                            const loginIcon = loginButton.querySelector('.github-icon');
+                            const loginText = loginButton.querySelector('span:last-child');
+                            
+                            loginIcon.textContent = 'X';
+                            loginText.textContent = 'Sign in Failed';
+                            
+                            // Reset to normal state after 3 seconds
+                            setTimeout(() => {
+                                loginIcon.textContent = 'G';
+                                loginText.textContent = 'Sign in with GitHub';
+                            }, 3000);
+                        }
+                    }
+                    
+                    showMessage(message.message, !message.success);
+                    
+                    // If authentication was successful, reload configuration to update UI
+                    if (message.success && message.config) {
+                        loadConfig();
+                    }
                     break;
                     
                 case 'scanStarted':

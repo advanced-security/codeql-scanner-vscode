@@ -728,4 +728,71 @@ export class GitHubService {
       return "github.com";
     }
   }
+
+  /**
+   * Authenticate with GitHub using VS Code's built-in GitHub authentication provider.
+   * This method will prompt the user to sign in with GitHub and return the authentication session.
+   * @param scopes The GitHub OAuth scopes to request
+   * @returns A promise that resolves to the authentication session, or null if authentication failed
+   */
+  public async authenticateWithGitHub(scopes: string[] = ['repo', 'read:org', 'security_events']): Promise<boolean> {
+    this.logger.logServiceCall("GitHubService", "authenticateWithGitHub", "started");
+
+    try {
+      // Use VS Code's built-in GitHub authentication provider
+      const session = await vscode.authentication.getSession('github', scopes, { createIfNone: true });
+      
+      if (session) {
+        // Got a valid session, update the token and Octokit instance
+        this.updateToken(session.accessToken);
+        
+        this.logger.logServiceCall("GitHubService", "authenticateWithGitHub", "completed", {
+          scopes: session.scopes,
+          account: session.account.label
+        });
+        
+        // Show confirmation to user
+        vscode.window.showInformationMessage(`Signed in to GitHub as ${session.account.label}`);
+        
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      this.logger.logServiceCall("GitHubService", "authenticateWithGitHub", "failed", error);
+      vscode.window.showErrorMessage(`GitHub authentication failed: ${error instanceof Error ? error.message : String(error)}`);
+      return false;
+    }
+  }
+
+  /**
+   * Check if there's an existing GitHub authentication session through VS Code authentication API
+   * @returns A promise that resolves to information about the current session or null if none exists
+   */
+  public async checkGitHubAuth(): Promise<{ isAuthenticated: boolean; displayName?: string }> {
+    this.logger.logServiceCall("GitHubService", "checkGitHubAuth", "started");
+
+    try {
+      // Check for existing sessions without prompting the user
+      const sessions = await vscode.authentication.getAccounts('github');
+      
+      if (sessions && sessions.length > 0) {
+        // We have an existing session, use it
+        this.logger.logServiceCall("GitHubService", "checkGitHubAuth", "completed", {
+          isAuthenticated: true,
+          account: sessions[0].label
+        });
+        
+        return {
+          isAuthenticated: true,
+          displayName: sessions[0].label
+        };
+      }
+      
+      return { isAuthenticated: false };
+    } catch (error) {
+      this.logger.logServiceCall("GitHubService", "checkGitHubAuth", "failed", error);
+      return { isAuthenticated: false };
+    }
+  }
 }
