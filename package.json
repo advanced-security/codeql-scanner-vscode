@@ -10,7 +10,7 @@
     "icon": "src/assets/VS-marketplace-CodeQL-icon.png",
     "publisher": "GeekMasher",
     "engines": {
-        "vscode": "^1.74.0"
+        "vscode": "^1.100.0"
     },
     "categories": [
         "Other",
@@ -276,17 +276,30 @@
         "pretest": "npm run compile && npm run lint",
         "lint": "eslint src --ext ts",
         "test": "node ./out/test/runTest.js",
+        "test:unit": "mocha --require ts-node/register \"src/test/suite/**/*.test.ts\"",
+        "test:services": "mocha --require ts-node/register \"src/test/suite/services/**/*.test.ts\"",
+        "test:providers": "mocha --require ts-node/register \"src/test/suite/providers/**/*.test.ts\"",
+        "test:integration": "mocha --require ts-node/register \"src/test/suite/integration.test.ts\"",
+        "test:all": "./scripts/run-tests.sh",
         "package": "./scripts/package-extension.sh",
         "test-extension": "./scripts/test-extension.sh",
         "test-codeql": "./scripts/test-codeql-setup.sh"
     },
     "devDependencies": {
+        "@types/chai": "^5.2.2",
+        "@types/mocha": "^10.0.10",
         "@types/node": "24.x",
-        "@types/vscode": "^1.103.0",
+        "@types/sinon": "^17.0.4",
+        "@types/vscode": "^1.100.0",
         "@typescript-eslint/eslint-plugin": "^8.42.0",
         "@typescript-eslint/parser": "^8.42.0",
+        "chai": "^6.0.1",
         "eslint": "^9.34.0",
-        "typescript": "^5.9.2"
+        "mocha": "^11.7.2",
+        "sinon": "^21.0.0",
+        "ts-node": "^10.9.2",
+        "typescript": "^5.9.2",
+        "vscode-test": "^1.6.1"
     },
     "dependencies": {
         "@octokit/rest": "^22.0.0",

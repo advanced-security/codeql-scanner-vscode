@@ -1,0 +1,4 @@
+name: codeql-scanner-vscode
+repository: advanced-security/codeql-scanner-vscode
+version: 0.2.0
+default: true
