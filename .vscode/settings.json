@@ -1,14 +1,11 @@
 {
-    "codeql-scanner.github.owner": "",
-    "codeql-scanner.github.repo": "",
-    "codeql-scanner.searchPaths": [],
+    "codeql-scanner.github.owner": "advanced-security",
+    "codeql-scanner.github.repo": "codeql-scanner-vscode",
     "codeql-scanner.suites": [
-        "security-extended",
-        "security-and-quality"
+        "default"
     ],
     "codeql-scanner.languages": [
-        "javascript",
-        "typescript"
+        "javascript"
     ],
-    "codeql-scanner.useLocalScan": true
+    "codeql-scanner.threatModel": "Local"
 }
