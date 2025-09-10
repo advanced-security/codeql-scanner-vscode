@@ -127,14 +127,23 @@ export class GitHubService {
    * Update the GitHub token used for authentication.
    * @param token GitHub token to use for authentication
    */
-  public updateToken(token: string) {
+  public updateToken(token: string, baseUrl?: string) {
+    const config = vscode.workspace.getConfiguration("codeql-scanner");
+    const apiUrl = baseUrl || config.get<string>("github.baseUrl", "https://api.github.com");
+    
     this.octokit = new Octokit({
       auth: token,
+      baseUrl: apiUrl
     });
-    this.logger.info("GitHubService", "GitHub token updated");
-    vscode.workspace
-      .getConfiguration("codeql-scanner")
-      .update("github.token", token, vscode.ConfigurationTarget.Global);
+    
+    this.logger.info(
+      "GitHubService", 
+      "GitHub token and base URL updated", 
+      { baseUrl: apiUrl }
+    );
+    
+    // Update the token in configuration
+    config.update("github.token", token, vscode.ConfigurationTarget.Global);
   }
 
   public async getRepositoryInfo(): Promise<RepositoryInfo> {

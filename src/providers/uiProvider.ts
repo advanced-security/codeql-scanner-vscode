@@ -61,7 +61,7 @@ export class UiProvider implements vscode.WebviewViewProvider {
             this.checkCodeQLEnabled();
             break;
           case "updateRepositoryInfo":
-            this.updateRepositoryInfo(message.owner, message.repo);
+            this.updateRepositoryInfo(message.owner, message.repo, message.url);
             break;
           case "runLocalScan":
             this.runLocalScan();
@@ -98,6 +98,7 @@ export class UiProvider implements vscode.WebviewViewProvider {
         `Saving configuration: ${JSON.stringify(config, null, 2)}`
       );
 
+      // Update the standard workspace configuration
       await Promise.all([
         workspaceConfig.update(
           "suites",
@@ -115,6 +116,38 @@ export class UiProvider implements vscode.WebviewViewProvider {
           vscode.ConfigurationTarget.Workspace
         ),
       ]);
+      
+      // Update GitHub URL if provided
+      if (config.githubUrl) {
+        let apiUrl = "https://api.github.com";
+        
+        if (config.githubUrl) {
+          if (config.githubUrl === "github.com" || config.githubUrl === "https://github.com") {
+            apiUrl = "https://api.github.com";
+          } else {
+            // Remove https:// prefix if present
+            const cleanUrl = config.githubUrl.replace(/^https?:\/\//, '');
+            
+            // For GitHub Enterprise, convert to API URL format
+            apiUrl = `https://${cleanUrl}`;
+            if (!apiUrl.includes('/api/v3')) {
+              apiUrl = apiUrl.endsWith('/') ? `${apiUrl}api/v3` : `${apiUrl}/api/v3`;
+            }
+          }
+        }
+        
+        this.logger.info(
+          "UiProvider",
+          "Updating GitHub base URL configuration",
+          { userInput: config.githubUrl, apiUrl }
+        );
+        
+        await workspaceConfig.update(
+          "github.baseUrl",
+          apiUrl,
+          vscode.ConfigurationTarget.Global
+        );
+      }
 
       this.logger.logServiceCall(
         "UiProvider",
@@ -219,6 +252,7 @@ export class UiProvider implements vscode.WebviewViewProvider {
       githubToken: config.get<string>("github.token", ""),
       githubOwner: config.get<string>("github.owner", ""),
       githubRepo: config.get<string>("github.repo", ""),
+      githubUrl: config.get<string>("github.baseUrl", "https://api.github.com"),
       githubLanguages: config.get<string[]>("github.languages", []),
       suites: config.get<string[]>("suites", ["default"]),
       languages: languages,
@@ -251,8 +285,10 @@ export class UiProvider implements vscode.WebviewViewProvider {
     }
 
     try {
-      // Update the service with the current token
-      this._githubService.updateToken(token);
+      const baseUrl = config.get<string>("github.baseUrl");
+      
+      // Update the service with the current token and base URL
+      this._githubService.updateToken(token, baseUrl);
 
       // Test the connection by getting repository info
       await this._githubService.getRepositoryInfo();
@@ -1115,9 +1151,9 @@ export class UiProvider implements vscode.WebviewViewProvider {
    * @param owner Repository owner
    * @param repo Repository name
    */
-  private async updateRepositoryInfo(owner: string, repo: string): Promise<void> {
+  private async updateRepositoryInfo(owner: string, repo: string, url?: string): Promise<void> {
     this.logger.logServiceCall("UiProvider", "updateRepositoryInfo", "started", {
-      owner, repo
+      owner, repo, url
     });
 
     if (!owner || !repo) {
@@ -1156,6 +1192,30 @@ export class UiProvider implements vscode.WebviewViewProvider {
       
       this.logger.debug("UiProvider", "Updating github.repo setting", { repo });
       await config.update("github.repo", repo, vscode.ConfigurationTarget.Workspace);
+      
+      // Update GitHub URL if provided
+      if (url) {
+        // Convert web URL to API URL
+        let apiUrl = "https://api.github.com"; // Default API URL
+        
+        if (url) {
+          if (url === "github.com" || url === "https://github.com") {
+            apiUrl = "https://api.github.com";
+          } else {
+            // Remove https:// prefix if present
+            const cleanUrl = url.replace(/^https?:\/\//, '');
+            
+            // For GitHub Enterprise, convert to API URL
+            apiUrl = `https://${cleanUrl}`;
+            if (!apiUrl.includes('/api/v3')) {
+              apiUrl = apiUrl.endsWith('/') ? `${apiUrl}api/v3` : `${apiUrl}/api/v3`;
+            }
+          }
+        }
+        
+        this.logger.debug("UiProvider", "Updating github.baseUrl setting", { url, apiUrl });
+        await config.update("github.baseUrl", apiUrl, vscode.ConfigurationTarget.Global);
+      }
       
       this.logger.info(
         "UiProvider",
@@ -2350,11 +2410,17 @@ export class UiProvider implements vscode.WebviewViewProvider {
 
     <div class="section" id="repo-settings" style="display: block;">
         <h3 class="collapsible-header" onclick="toggleRepoSection()">🔗 GitHub Repository <span class="toggle-icon">▼</span></h3>
-        <div id="codeqlStatusMessage" style="margin-bottom: 15px; padding: 10px; border-radius: 6px; display: none;">
-            <!-- CodeQL status will be shown here -->
-        </div>
-        
         <div id="repo-content" class="collapsible-content">
+            <div id="codeqlStatusMessage" style="margin-bottom: 15px; padding: 10px; border-radius: 6px; display: none;">
+                <!-- CodeQL status will be shown here -->
+            </div>
+
+            <div class="form-group">
+                <label for="githubUrl">GitHub URL:</label>
+                <input type="text" id="githubUrl" placeholder="e.g., https://github.com or https://github.yourenterprise.com">
+                <div class="help-text">The base URL of your GitHub instance (leave empty for github.com)</div>
+            </div>
+
             <div class="form-group">
                 <label for="githubOwner">Repository Owner/Organization:</label>
                 <input type="text" id="githubOwner" placeholder="e.g., octocat">
@@ -2520,10 +2586,15 @@ export class UiProvider implements vscode.WebviewViewProvider {
         
         function saveConfig() {
             console.log('Saving configuration...');
+            
+            // Get GitHub URL
+            const githubUrl = document.getElementById('githubUrl').value.trim();
+            
             const config = {
                 suites: [getSelectedSuite()],
                 languages: getSelectedLanguages(),
-                threatModel: getSelectedThreatModel()
+                threatModel: getSelectedThreatModel(),
+                githubUrl: githubUrl
             };
             
             console.log('Configuration to save:', config);
@@ -2736,6 +2807,7 @@ export class UiProvider implements vscode.WebviewViewProvider {
         function updateRepositoryInfo() {
             const owner = document.getElementById('githubOwner').value.trim();
             const repo = document.getElementById('githubRepo').value.trim();
+            const githubUrl = document.getElementById('githubUrl').value.trim();
             
             if (!owner || !repo) {
                 showMessage('Repository owner and name are required', 'error');
@@ -2749,7 +2821,8 @@ export class UiProvider implements vscode.WebviewViewProvider {
             vscode.postMessage({
                 command: 'updateRepositoryInfo',
                 owner: owner,
-                repo: repo
+                repo: repo,
+                url: githubUrl
             });
         }
         
@@ -3038,6 +3111,11 @@ export class UiProvider implements vscode.WebviewViewProvider {
                         setSelectedLanguages(config.languages);
                     } else {
                         console.log('No languages found in config, defaulting to empty selection');
+                    }
+                    
+                    // Set GitHub URL if available
+                    if (config.githubUrl) {
+                        document.getElementById('githubUrl').value = config.githubUrl.replace('https://api.github.com', '');
                     }
                     
                     // Check CodeQL status automatically if repository is configured
