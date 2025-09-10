@@ -57,6 +57,12 @@ export class UiProvider implements vscode.WebviewViewProvider {
           case "testConnection":
             this.testGitHubConnection();
             break;
+          case "checkCodeQLEnabled":
+            this.checkCodeQLEnabled();
+            break;
+          case "updateRepositoryInfo":
+            this.updateRepositoryInfo(message.owner, message.repo, message.url);
+            break;
           case "runLocalScan":
             this.runLocalScan();
             break;
@@ -92,6 +98,7 @@ export class UiProvider implements vscode.WebviewViewProvider {
         `Saving configuration: ${JSON.stringify(config, null, 2)}`
       );
 
+      // Update the standard workspace configuration
       await Promise.all([
         workspaceConfig.update(
           "suites",
@@ -109,6 +116,36 @@ export class UiProvider implements vscode.WebviewViewProvider {
           vscode.ConfigurationTarget.Workspace
         ),
       ]);
+      
+      // Update GitHub URL if provided
+      if (config.githubUrl) {
+        let apiUrl = "https://api.github.com";
+        
+        if (config.githubUrl === "github.com" || config.githubUrl === "https://github.com") {
+          apiUrl = "https://api.github.com";
+        } else {
+          // Remove https:// prefix if present
+          const cleanUrl = config.githubUrl.replace(/^https?:\/\//, '');
+          
+          // For GitHub Enterprise, convert to API URL format
+          apiUrl = `https://${cleanUrl}`;
+          if (!apiUrl.includes('/api/v3')) {
+            apiUrl = apiUrl.endsWith('/') ? `${apiUrl}api/v3` : `${apiUrl}/api/v3`;
+          }
+        }
+        
+        this.logger.info(
+          "UiProvider",
+          "Updating GitHub base URL configuration",
+          { userInput: config.githubUrl, apiUrl }
+        );
+        
+        await workspaceConfig.update(
+          "github.baseUrl",
+          apiUrl,
+          vscode.ConfigurationTarget.Global
+        );
+      }
 
       this.logger.logServiceCall(
         "UiProvider",
@@ -164,6 +201,39 @@ export class UiProvider implements vscode.WebviewViewProvider {
       );
     }
     this.logger.info("UiProvider", `Using threat model: ${threatModel}`);
+    
+    // Check if CodeQL is enabled for the configured repository
+    const owner = config.get<string>("github.owner");
+    const repo = config.get<string>("github.repo");
+    if (owner && repo) {
+      this.logger.info(
+        "UiProvider",
+        `Checking CodeQL status during configuration load for ${owner}/${repo}`
+      );
+      
+      // We'll check CodeQL status, but won't block configuration loading
+      this.checkCodeQLEnabled()
+        .then(isEnabled => {
+          this.logger.info(
+            "UiProvider", 
+            `CodeQL status check during configuration load: ${isEnabled ? 'ENABLED' : 'NOT ENABLED'} for ${owner}/${repo}`,
+            { owner, repo, codeqlEnabled: isEnabled }
+          );
+        })
+        .catch(error => {
+          this.logger.warn(
+            "UiProvider", 
+            "Failed to check CodeQL status during configuration load", 
+            error
+          );
+        });
+    } else {
+      this.logger.info(
+        "UiProvider",
+        "Skipping CodeQL status check - repository information not configured",
+        { owner, repo }
+      );
+    }
 
     // Auto-select GitHub repository languages if no manual selection exists
     let languages = config.get<string[]>("languages", []);
@@ -180,6 +250,7 @@ export class UiProvider implements vscode.WebviewViewProvider {
       githubToken: config.get<string>("github.token", ""),
       githubOwner: config.get<string>("github.owner", ""),
       githubRepo: config.get<string>("github.repo", ""),
+      githubUrl: config.get<string>("github.baseUrl", "https://api.github.com"),
       githubLanguages: config.get<string[]>("github.languages", []),
       suites: config.get<string[]>("suites", ["default"]),
       languages: languages,
@@ -212,8 +283,10 @@ export class UiProvider implements vscode.WebviewViewProvider {
     }
 
     try {
-      // Update the service with the current token
-      this._githubService.updateToken(token);
+      const baseUrl = config.get<string>("github.baseUrl");
+      
+      // Update the service with the current token and base URL
+      this._githubService.updateToken(token, baseUrl);
 
       // Test the connection by getting repository info
       await this._githubService.getRepositoryInfo();
@@ -438,6 +511,36 @@ export class UiProvider implements vscode.WebviewViewProvider {
       return;
     }
     
+    // Check if CodeQL is enabled for the repository
+    const config = vscode.workspace.getConfiguration("codeql-scanner");
+    const owner = config.get<string>("github.owner");
+    const repo = config.get<string>("github.repo");
+    
+    if (!owner || !repo) {
+      this.logger.warn("UiProvider", "Repository information not configured");
+      this._view?.webview.postMessage({
+        command: "scanBlocked",
+        success: false,
+        message: "Repository information not configured. Please set up your repository connection first.",
+      });
+      return;
+    }
+    
+    try {
+      const isEnabled = await this._githubService.isCodeQLEnabled(owner, repo);
+      if (!isEnabled) {
+        this.logger.warn("UiProvider", `CodeQL is not enabled for ${owner}/${repo}`);
+        this._view?.webview.postMessage({
+          command: "scanBlocked",
+          success: false,
+          message: `CodeQL is not enabled for ${owner}/${repo}. Please enable CodeQL in your repository settings.`,
+        });
+        return;
+      }
+    } catch (error) {
+      this.logger.warn("UiProvider", "Failed to check if CodeQL is enabled", error);
+    }
+    
     try {
       // Set scan in progress flag
       this._scanInProgress = true;
@@ -481,10 +584,20 @@ export class UiProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  /**
+   * Fetch remote CodeQL alerts from GitHub for the configured repository
+   * Requires CodeQL to be enabled on the repository
+   */
   private async fetchRemoteAlerts() {
+    this.logger.logServiceCall("UiProvider", "fetchRemoteAlerts", "started");
+    
     // Check if a scan is already in progress
     if (this._scanInProgress) {
-      this.logger.warn("UiProvider", "Attempted to fetch alerts while a scan is in progress");
+      this.logger.warn(
+        "UiProvider", 
+        "Attempted to fetch alerts while a scan is in progress",
+        { scanInProgress: this._scanInProgress }
+      );
       
       // Send message to UI
       this._view?.webview.postMessage({
@@ -499,11 +612,82 @@ export class UiProvider implements vscode.WebviewViewProvider {
       return;
     }
     
+    // Check if repository information is configured
+    const config = vscode.workspace.getConfiguration("codeql-scanner");
+    const owner = config.get<string>("github.owner");
+    const repo = config.get<string>("github.repo");
+    
+    this.logger.info(
+      "UiProvider",
+      "Fetching remote alerts with repository configuration",
+      { owner, repo }
+    );
+    
+    if (!owner || !repo) {
+      this.logger.warn(
+        "UiProvider", 
+        "Repository information not configured for fetching alerts"
+      );
+      this._view?.webview.postMessage({
+        command: "fetchBlocked",
+        success: false,
+        message: "Repository information not configured. Please set up your repository connection first.",
+      });
+      return;
+    }
+    
+    // Check if CodeQL is enabled for the repository
+    try {
+      this.logger.info(
+        "UiProvider",
+        `Checking if CodeQL is enabled for ${owner}/${repo} before fetching alerts`
+      );
+      
+      const isEnabled = await this._githubService.isCodeQLEnabled(owner, repo);
+      
+      if (!isEnabled) {
+        this.logger.warn(
+          "UiProvider", 
+          `CodeQL is not enabled for ${owner}/${repo}, cannot fetch alerts`,
+          { owner, repo, codeqlEnabled: false }
+        );
+        this._view?.webview.postMessage({
+          command: "fetchBlocked",
+          success: false,
+          message: `CodeQL is not enabled for ${owner}/${repo}. Please enable CodeQL in your repository settings.`,
+        });
+        return;
+      }
+      
+      this.logger.info(
+        "UiProvider",
+        `CodeQL is enabled for ${owner}/${repo}, proceeding with alert fetch`
+      );
+    } catch (error) {
+      this.logger.warn(
+        "UiProvider", 
+        "Failed to check if CodeQL is enabled before fetching alerts", 
+        error
+      );
+    }
+    
     // Set scan in progress flag for the duration of the fetch
     this._scanInProgress = true;
     
+    this.logger.debug(
+      "UiProvider",
+      "Setting scan in progress flag for fetch operation",
+      { scanInProgress: this._scanInProgress }
+    );
+    
     try {
       this._fetchStartTime = Date.now();
+      
+      this.logger.debug(
+        "UiProvider",
+        "Starting fetch operation timer",
+        { fetchStartTime: this._fetchStartTime }
+      );
 
       this._view?.webview.postMessage({
         command: "fetchStarted",
@@ -516,46 +700,95 @@ export class UiProvider implements vscode.WebviewViewProvider {
       const owner = config.get<string>("github.owner");
       const repo = config.get<string>("github.repo");
 
+      this.logger.debug(
+        "UiProvider",
+        "Verifying GitHub configuration for alert fetch",
+        { 
+          hasToken: !!token, 
+          owner, 
+          repo 
+        }
+      );
+
       if (!token || !owner || !repo) {
-        throw new Error(
+        const error = new Error(
           "GitHub configuration is incomplete. Please configure token, owner, and repo."
         );
+        this.logger.error("UiProvider", "GitHub configuration incomplete for alert fetch", error);
+        throw error;
       }
 
       // Update the service with the current token
+      this.logger.debug("UiProvider", "Updating GitHub token for alert fetch");
       this._githubService.updateToken(token);
 
       // Use GitHubService to fetch CodeQL alerts
+      this.logger.info(
+        "UiProvider",
+        `Fetching CodeQL alerts from GitHub for ${owner}/${repo}`
+      );
+      
       const codeqlAlerts = await this._githubService.getCodeQLAlerts(
         owner,
         repo
       );
+      
+      this.logger.info(
+        "UiProvider",
+        `Retrieved ${codeqlAlerts.length} CodeQL alerts from GitHub`,
+        { alertCount: codeqlAlerts.length }
+      );
 
       // Convert GitHub alerts to our ScanResult format
-      const scanResults = codeqlAlerts.map((alert: any) => ({
-        ruleId: alert.rule?.id || "unknown",
-        severity: this.mapGitHubSeverityToLocal(
+      this.logger.debug(
+        "UiProvider",
+        "Converting GitHub alerts to ScanResult format"
+      );
+      
+      const scanResults = codeqlAlerts.map((alert: any) => {
+        const severity = this.mapGitHubSeverityToLocal(
           alert.rule?.security_severity_level || alert.rule?.severity
-        ),
-        language: this.mapCodeQLAlertLanguage(alert.rule?.id),
-        message:
-          alert.message?.text || alert.rule?.description || "No description",
-        location: {
-          file: alert.most_recent_instance?.location?.path 
-            ? path.join(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "", alert.most_recent_instance.location.path)
-            : "unknown",
-          startLine: alert.most_recent_instance?.location?.start_line || 1,
-          startColumn: alert.most_recent_instance?.location?.start_column || 1,
-          endLine: alert.most_recent_instance?.location?.end_line || 1,
-          endColumn: alert.most_recent_instance?.location?.end_column || 1,
-        },
-      }));
+        );
+        const language = this.mapCodeQLAlertLanguage(alert.rule?.id);
+        
+        return {
+          ruleId: alert.rule?.id || "unknown",
+          severity: severity,
+          language: language,
+          message:
+            alert.message?.text || alert.rule?.description || "No description",
+          location: {
+            file: alert.most_recent_instance?.location?.path 
+              ? path.join(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "", alert.most_recent_instance.location.path)
+              : "unknown",
+            startLine: alert.most_recent_instance?.location?.start_line || 1,
+            startColumn: alert.most_recent_instance?.location?.start_column || 1,
+            endLine: alert.most_recent_instance?.location?.end_line || 1,
+            endColumn: alert.most_recent_instance?.location?.end_column || 1,
+          },
+        };
+      });
+      
+      this.logger.info(
+        "UiProvider",
+        `Converted ${scanResults.length} GitHub alerts to ScanResult format`,
+        { 
+          resultCount: scanResults.length
+        }
+      );
 
       // Update the scan results and refresh summary
+      this.logger.debug("UiProvider", "Updating scan results with fetched alerts");
       this.updateScanResults(scanResults);
 
       // Also update the results provider if available
       if (this._resultsProvider) {
+        this.logger.debug(
+          "UiProvider", 
+          "Updating results provider with fetched alerts",
+          { resultsCount: scanResults.length }
+        );
+        
         this._resultsProvider.setResults(scanResults);
         vscode.commands.executeCommand(
           "setContext",
@@ -568,6 +801,15 @@ export class UiProvider implements vscode.WebviewViewProvider {
         ? Date.now() - this._fetchStartTime
         : 0;
       const durationText = this.formatDuration(fetchDuration);
+      
+      this.logger.info(
+        "UiProvider",
+        `Fetch operation completed in ${durationText}`,
+        { 
+          fetchDuration,
+          alertsCount: scanResults.length 
+        }
+      );
 
       this._view?.webview.postMessage({
         command: "fetchCompleted",
@@ -580,6 +822,12 @@ export class UiProvider implements vscode.WebviewViewProvider {
         ? Date.now() - this._fetchStartTime
         : 0;
       const durationText = this.formatDuration(fetchDuration);
+      
+      this.logger.error(
+        "UiProvider",
+        `Failed to fetch remote alerts after ${durationText}`,
+        error
+      );
 
       this._view?.webview.postMessage({
         command: "fetchCompleted",
@@ -590,6 +838,18 @@ export class UiProvider implements vscode.WebviewViewProvider {
     } finally {
       // Reset scan in progress flag regardless of success or failure
       this._scanInProgress = false;
+      
+      this.logger.debug(
+        "UiProvider",
+        "Resetting scan in progress flag after fetch operation",
+        { scanInProgress: false }
+      );
+      
+      this.logger.logServiceCall(
+        "UiProvider",
+        "fetchRemoteAlerts", 
+        "completed"
+      );
     }
   }
 
@@ -748,6 +1008,261 @@ export class UiProvider implements vscode.WebviewViewProvider {
     return remainingMinutes > 0
       ? `${hours}h ${remainingMinutes}m`
       : `${hours}h`;
+  }
+
+  /**
+   * Check if CodeQL is enabled on the configured GitHub repository
+   * This prevents scanning when CodeQL is not enabled
+   * Sets VS Code context to control UI visibility based on CodeQL status
+   */
+  private async checkCodeQLEnabled(): Promise<boolean> {
+    this.logger.logServiceCall("UiProvider", "checkCodeQLEnabled", "started");
+
+    const config = vscode.workspace.getConfiguration("codeql-scanner");
+    const token = config.get<string>("github.token");
+    const owner = config.get<string>("github.owner");
+    const repo = config.get<string>("github.repo");
+
+    this.logger.info(
+      "UiProvider",
+      "Checking CodeQL status for repository",
+      { owner, repo, tokenConfigured: !!token }
+    );
+
+    // Default to hiding scanning UI if we can't verify CodeQL status
+    await vscode.commands.executeCommand('setContext', 'codeql-scanner.codeQLEnabled', false);
+    
+    this.logger.debug("UiProvider", "Setting CodeQL enabled context to false by default");
+
+    if (!token) {
+      this.logger.warn(
+        "UiProvider",
+        "GitHub token not configured for checking CodeQL status"
+      );
+      this._view?.webview.postMessage({
+        command: "codeqlStatusChecked",
+        success: false,
+        enabled: false,
+        message: "GitHub token is required",
+        owner: owner || "",
+        repo: repo || "",
+      });
+      return false;
+    }
+
+    if (!owner || !repo) {
+      this.logger.warn(
+        "UiProvider",
+        "GitHub repository information not configured",
+        { owner, repo }
+      );
+      this._view?.webview.postMessage({
+        command: "codeqlStatusChecked",
+        success: false,
+        enabled: false,
+        message: "Repository owner and name must be configured",
+        owner: owner || "",
+        repo: repo || "",
+      });
+      return false;
+    }
+
+    try {
+      this.logger.debug(
+        "UiProvider", 
+        "Updating GitHub token for CodeQL status check"
+      );
+      
+      // Update the service with the current token
+      this._githubService.updateToken(token);
+
+      this.logger.info(
+        "UiProvider",
+        `Checking if CodeQL is enabled for ${owner}/${repo}`
+      );
+      
+      // Check if CodeQL is enabled
+      const isEnabled = await this._githubService.isCodeQLEnabled(owner, repo);
+
+      this.logger.logServiceCall(
+        "UiProvider",
+        "checkCodeQLEnabled",
+        "completed",
+        { owner, repo, enabled: isEnabled }
+      );
+      
+      this.logger.info(
+        "UiProvider",
+        `CodeQL status check result: ${isEnabled ? 'ENABLED' : 'NOT ENABLED'} for ${owner}/${repo}`
+      );
+      
+      // Update VS Code context to control UI visibility based on CodeQL status
+      await vscode.commands.executeCommand('setContext', 'codeql-scanner.codeQLEnabled', isEnabled);
+      
+      this.logger.info(
+        "UiProvider",
+        `Setting CodeQL enabled context to ${isEnabled}`,
+        { contextUpdated: true, codeQLEnabled: isEnabled }
+      );
+
+      this._view?.webview.postMessage({
+        command: "codeqlStatusChecked",
+        success: true,
+        enabled: isEnabled,
+        message: isEnabled ? 
+          `CodeQL is enabled for ${owner}/${repo}` : 
+          `CodeQL is not enabled for ${owner}/${repo}. Scanning functionality is disabled.`,
+        owner: owner || "",
+        repo: repo || "",
+      });
+
+      return isEnabled;
+    } catch (error) {
+      this.logger.logServiceCall(
+        "UiProvider",
+        "checkCodeQLEnabled",
+        "failed",
+        error
+      );
+      
+      this.logger.error(
+        "UiProvider",
+        `Failed to check CodeQL status for ${owner}/${repo}`,
+        error
+      );
+      this._view?.webview.postMessage({
+        command: "codeqlStatusChecked",
+        success: false,
+        enabled: false,
+        message: `Failed to check CodeQL status: ${error}`,
+        owner: owner || "",
+        repo: repo || "",
+      });
+      return false;
+    }
+  }
+
+  /**
+   * Update repository information when provided from the UI
+   * Updates the configuration settings and checks if CodeQL is enabled
+   * 
+   * @param owner Repository owner
+   * @param repo Repository name
+   */
+  private async updateRepositoryInfo(owner: string, repo: string, url?: string): Promise<void> {
+    this.logger.logServiceCall("UiProvider", "updateRepositoryInfo", "started", {
+      owner, repo, url
+    });
+
+    if (!owner || !repo) {
+      this.logger.warn(
+        "UiProvider",
+        "Invalid repository information provided",
+        { providedOwner: owner, providedRepo: repo }
+      );
+      this._view?.webview.postMessage({
+        command: "repositoryInfoUpdated",
+        success: false,
+        message: "Repository owner and name must be provided",
+      });
+      return;
+    }
+
+    const config = vscode.workspace.getConfiguration("codeql-scanner");
+    const oldOwner = config.get<string>("github.owner");
+    const oldRepo = config.get<string>("github.repo");
+    
+    this.logger.debug(
+      "UiProvider",
+      "Updating repository information",
+      { 
+        oldOwner, 
+        oldRepo, 
+        newOwner: owner, 
+        newRepo: repo 
+      }
+    );
+    
+    try {
+      // Update repository settings
+      this.logger.debug("UiProvider", "Updating github.owner setting", { owner });
+      await config.update("github.owner", owner, vscode.ConfigurationTarget.Workspace);
+      
+      this.logger.debug("UiProvider", "Updating github.repo setting", { repo });
+      await config.update("github.repo", repo, vscode.ConfigurationTarget.Workspace);
+      
+      // Update GitHub URL if provided
+      if (url) {
+        // Convert web URL to API URL
+        let apiUrl = "https://api.github.com"; // Default API URL
+        
+        if (url === "github.com" || url === "https://github.com") {
+          apiUrl = "https://api.github.com";
+        } else {
+          // Remove https:// prefix if present
+          const cleanUrl = url.replace(/^https?:\/\//, '');
+          
+          // For GitHub Enterprise, convert to API URL
+          apiUrl = `https://${cleanUrl}`;
+          if (!apiUrl.includes('/api/v3')) {
+            apiUrl = apiUrl.endsWith('/') ? `${apiUrl}api/v3` : `${apiUrl}/api/v3`;
+          }
+        }
+        
+        this.logger.debug("UiProvider", "Updating github.baseUrl setting", { url, apiUrl });
+        await config.update("github.baseUrl", apiUrl, vscode.ConfigurationTarget.Global);
+      }
+      
+      this.logger.info(
+        "UiProvider",
+        `Repository information updated from ${oldOwner}/${oldRepo} to ${owner}/${repo}`
+      );
+      
+      this.logger.info(
+        "UiProvider",
+        "Checking CodeQL status for the updated repository"
+      );
+      
+      // Check if CodeQL is enabled on the updated repository
+      const codeqlStatus = await this.checkCodeQLEnabled();
+      
+      this.logger.info(
+        "UiProvider",
+        `CodeQL status for updated repository ${owner}/${repo}: ${codeqlStatus ? 'ENABLED' : 'NOT ENABLED'}`
+      );
+      
+      this.logger.logServiceCall(
+        "UiProvider",
+        "updateRepositoryInfo",
+        "completed",
+        { owner, repo, codeqlEnabled: codeqlStatus }
+      );
+      
+      this._view?.webview.postMessage({
+        command: "repositoryInfoUpdated",
+        success: true,
+        message: `Repository information updated to ${owner}/${repo}`,
+      });
+    } catch (error) {
+      this.logger.logServiceCall(
+        "UiProvider",
+        "updateRepositoryInfo",
+        "failed",
+        error
+      );
+      
+      this.logger.error(
+        "UiProvider",
+        `Failed to update repository information for ${owner}/${repo}`,
+        error
+      );
+      
+      this._view?.webview.postMessage({
+        command: "repositoryInfoUpdated",
+        success: false,
+        message: `Failed to update repository information: ${error}`,
+      });
+    }
   }
 
   private _getHtmlForWebview(webview: vscode.Webview) {
@@ -1167,6 +1682,37 @@ export class UiProvider implements vscode.WebviewViewProvider {
         h3 {
             margin-top: 0;
             color: var(--vscode-foreground);
+        }
+        
+        /* Collapsible section styles */
+        .collapsible-header {
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 5px 0;
+            user-select: none;
+        }
+        
+        .collapsible-header .toggle-icon {
+            transition: transform 0.3s ease;
+            margin-left: 8px;
+            font-size: 12px;
+        }
+        
+        .collapsible-header.collapsed .toggle-icon {
+            transform: rotate(-90deg);
+        }
+        
+        .collapsible-content {
+            max-height: 1000px;
+            overflow: hidden;
+            transition: max-height 0.4s ease;
+        }
+        
+        .collapsible-content.collapsed {
+            max-height: 0;
+            overflow: hidden;
         }
         
         #message {
@@ -1858,128 +2404,171 @@ export class UiProvider implements vscode.WebviewViewProvider {
         </div>
     </div>
 
-    <div class="section" id="summarySection" style="display: none;">
-        <h3>🔒 Security Dashboard</h3>
-        <div class="summary-section">
-            <div class="summary-grid">
-                <div class="summary-card">
-                    <div class="summary-number" id="totalAlerts">0</div>
-                    <div class="summary-label">Total</div>
-                </div>
-                <div class="summary-card critical">
-                    <div class="summary-number severity-critical" id="criticalAlerts">0</div>
-                    <div class="summary-label">Critical</div>
-                </div>
-                <div class="summary-card high">
-                    <div class="summary-number severity-high" id="highAlerts">0</div>
-                    <div class="summary-label">High</div>
-                </div>
-                <div class="summary-card medium">
-                    <div class="summary-number severity-medium" id="mediumAlerts">0</div>
-                    <div class="summary-label">Medium</div>
-                </div>
-                <div class="summary-card low">
-                    <div class="summary-number severity-low" id="lowAlerts">0</div>
-                    <div class="summary-label">Low</div>
-                </div>
+    <div class="section" id="repo-settings" style="display: block;">
+        <h3 class="collapsible-header" onclick="toggleRepoSection()">🔗 GitHub Repository <span class="toggle-icon">▼</span></h3>
+        <div id="repo-content" class="collapsible-content">
+            <div id="codeqlStatusMessage" style="margin-bottom: 15px; padding: 10px; border-radius: 6px; display: none;">
+                <!-- CodeQL status will be shown here -->
             </div>
 
-            <div id="detailsSection" style="display: none;">
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                    <div class="top-items">
-                        <h4>🎯 Top Vulnerabilities</h4>
-                        <ul class="top-list" id="topRules"></ul>
-                    </div>
-                    
-                    <div class="top-items">
-                        <h4>📄 Affected Files</h4>
-                        <ul class="top-list" id="topFiles"></ul>
-                    </div>
-                </div>
-                
-                <div class="top-items" style="margin-top: 10px; text-align: center;">
-                    <small style="color: var(--vscode-descriptionForeground); font-size: 10px; opacity: 0.7;">
-                        Last scan: <span id="scanDate" style="font-weight: 600;">Never</span>
-                    </small>
-                </div>
+            <div class="form-group">
+                <label for="githubUrl">GitHub URL:</label>
+                <input type="text" id="githubUrl" placeholder="e.g., https://github.com or https://github.yourenterprise.com">
+                <div class="help-text">The base URL of your GitHub instance (leave empty for github.com)</div>
+            </div>
+
+            <div class="form-group">
+                <label for="githubOwner">Repository Owner/Organization:</label>
+                <input type="text" id="githubOwner" placeholder="e.g., octocat">
+            </div>
             
-            <div id="noResultsMessage" class="no-results">
-                <div style="font-size: 14px; margin-bottom: 4px;">🛡️</div>
-                <div style="font-size: 12px; opacity: 0.8;">No security alerts detected</div>
-                <div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">Run a scan to analyze your code</div>
+            <div class="form-group">
+                <label for="githubRepo">Repository Name:</label>
+                <input type="text" id="githubRepo" placeholder="e.g., hello-world">
             </div>
+            
+            <div class="form-group">
+                <button onclick="updateRepositoryInfo()" id="updateRepoButton" class="action-button" style="min-width: auto; padding: 12px 20px; font-size: 13px;">
+                    <span class="update-icon">💾</span>
+                    <span>Update Repository Info</span>
+                </button>
+                <button onclick="checkCodeQLEnabled()" id="checkCodeQLButton" class="action-button" style="min-width: auto; padding: 12px 20px; font-size: 13px; margin-left: 5px;">
+                    <span class="check-icon">✓</span>
+                    <span>Check CodeQL Status</span>
+                </button>
+            </div>
+            <div class="help-text">Configure GitHub repository details to enable CodeQL scanning</div>
         </div>
     </div>
 
-    <div class="section">
-        <h3>🔍 Scan Configuration</h3>
-        <div class="form-group">
-            <label for="suites">Query Suite:</label>
-            <div id="suitesContainer">
-                <div class="suite-radio">
-                    <input type="radio" id="suite-default" name="suite" value="default">
-                    <label for="suite-default">
-                        <span class="suite-name">Default</span>
-                        <span class="suite-description">Basic code scanning queries for CI/CD</span>
-                    </label>
-                </div>
-                <div class="suite-radio">
-                    <input type="radio" id="suite-security-extended" name="suite" value="security-extended">
-                    <label for="suite-security-extended">
-                        <span class="suite-name">Security Extended</span>
-                        <span class="suite-description">Extended security queries with additional checks</span>
-                    </label>
-                </div>
-                <div class="suite-radio">
-                    <input type="radio" id="suite-security-and-quality" name="suite" value="security-and-quality">
-                    <label for="suite-security-and-quality">
-                        <span class="suite-name">Security and Quality</span>
-                        <span class="suite-description">Security queries plus code quality checks</span>
-                    </label>
-                </div>
-                
+    <div id="scanSettings" style="display: none;">
+      <div class="section" id="summarySection">
+          <h3>🔒 Security Dashboard</h3>
+          <div class="summary-section">
+              <div class="summary-grid">
+                  <div class="summary-card">
+                      <div class="summary-number" id="totalAlerts">0</div>
+                      <div class="summary-label">Total</div>
+                  </div>
+                  <div class="summary-card critical">
+                      <div class="summary-number severity-critical" id="criticalAlerts">0</div>
+                      <div class="summary-label">Critical</div>
+                  </div>
+                  <div class="summary-card high">
+                      <div class="summary-number severity-high" id="highAlerts">0</div>
+                      <div class="summary-label">High</div>
+                  </div>
+                  <div class="summary-card medium">
+                      <div class="summary-number severity-medium" id="mediumAlerts">0</div>
+                      <div class="summary-label">Medium</div>
+                  </div>
+                  <div class="summary-card low">
+                      <div class="summary-number severity-low" id="lowAlerts">0</div>
+                      <div class="summary-label">Low</div>
+                  </div>
+              </div>
+
+              <div id="detailsSection" style="display: none;">
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                      <div class="top-items">
+                          <h4>🎯 Top Vulnerabilities</h4>
+                          <ul class="top-list" id="topRules"></ul>
+                      </div>
+                      
+                      <div class="top-items">
+                          <h4>📄 Affected Files</h4>
+                          <ul class="top-list" id="topFiles"></ul>
+                      </div>
+                  </div>
+                  
+                  <div class="top-items" style="margin-top: 10px; text-align: center;">
+                      <small style="color: var(--vscode-descriptionForeground); font-size: 10px; opacity: 0.7;">
+                          Last scan: <span id="scanDate" style="font-weight: 600;">Never</span>
+                      </small>
+                  </div>
+              
+              <div id="noResultsMessage" class="no-results">
+                  <div style="font-size: 14px; margin-bottom: 4px;">🛡️</div>
+                  <div style="font-size: 12px; opacity: 0.8;">No security alerts detected</div>
+                  <div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">Run a scan to analyze your code</div>
+              </div>
+          </div>
+      </div>
+
+      <div class="section" id="scan-configuration">
+          <h3 class="collapsible-header collapsed" onclick="toggleScanConfigSection()">🔍 Scan Configuration <span class="toggle-icon">▼</span></h3>
+          <div id="scan-config-content" class="collapsible-content collapsed">
+            <div class="form-group">
+              <label for="suites">Query Suite:</label>
+              <div id="suitesContainer">
+                  <div class="suite-radio">
+                      <input type="radio" id="suite-default" name="suite" value="default">
+                      <label for="suite-default">
+                          <span class="suite-name">Default</span>
+                          <span class="suite-description">Basic code scanning queries for CI/CD</span>
+                      </label>
+                  </div>
+                  <div class="suite-radio">
+                      <input type="radio" id="suite-security-extended" name="suite" value="security-extended">
+                      <label for="suite-security-extended">
+                          <span class="suite-name">Security Extended</span>
+                          <span class="suite-description">Extended security queries with additional checks</span>
+                      </label>
+                  </div>
+                  <div class="suite-radio">
+                      <input type="radio" id="suite-security-and-quality" name="suite" value="security-and-quality">
+                      <label for="suite-security-and-quality">
+                          <span class="suite-name">Security and Quality</span>
+                          <span class="suite-description">Security queries plus code quality checks</span>
+                      </label>
+                  </div>
+                  
+              </div>
+              <div class="help-text">Select the CodeQL query suite to run during analysis</div>
+          </div>
+          
+          <div class="form-group">
+              <label for="threatModel">Threat Model:</label>
+              <div id="threatModelContainer">
+                  <div class="suite-radio">
+                      <input type="radio" id="threat-remote" name="threatModel" value="Remote">
+                      <label for="threat-remote">
+                          <span class="suite-name">Remote</span>
+                          <span class="suite-description">Analyze threats from external attackers and remote code execution</span>
+                      </label>
+                  </div>
+                  <div class="suite-radio">
+                      <input type="radio" id="threat-local" name="threatModel" value="Local">
+                      <label for="threat-local">
+                          <span class="suite-name">Local</span>
+                          <span class="suite-description">Focus on local threats and privilege escalation scenarios</span>
+                      </label>
+                  </div>
+              </div>
+              <div class="help-text">Select the threat model to focus the analysis on specific security scenarios</div>
+          </div>
+          </div>
+      </div>
+      <div class="section" id="languages-selection">
+          <h3 class="collapsible-header collapsed" onclick="toggleLanguageSection()">🔤 Language Selection <span class="toggle-icon">▼</span></h3>
+          <div id="language-content" class="collapsible-content collapsed">
+            <div class="form-group">
+              <label for="languages">Programming Languages:</label>
+              <div id="languagesContainer">
+                  <div id="languagesList" style="display: none;">
+                      <!-- Language checkboxes will be populated here -->
+                  </div>
+                  <div style="margin-bottom: 20px;">
+                      <button onclick="loadSupportedLanguages()" id="loadLanguagesButton" type="button" class="action-button futuristic-load-btn" style="min-width: auto; padding: 12px 20px; font-size: 13px;">
+                          <span class="load-icon">🔄</span>
+                          <span>Load Available Languages</span>
+                      </button>
+                  </div>
+              </div>
+              <div class="help-text">Select the programming languages to analyze. Languages are auto-detected from your CodeQL CLI installation.</div>
             </div>
-            <div class="help-text">Select the CodeQL query suite to run during analysis</div>
-        </div>
-        
-        <div class="form-group">
-            <label for="threatModel">Threat Model:</label>
-            <div id="threatModelContainer">
-                <div class="suite-radio">
-                    <input type="radio" id="threat-remote" name="threatModel" value="Remote">
-                    <label for="threat-remote">
-                        <span class="suite-name">Remote</span>
-                        <span class="suite-description">Analyze threats from external attackers and remote code execution</span>
-                    </label>
-                </div>
-                <div class="suite-radio">
-                    <input type="radio" id="threat-local" name="threatModel" value="Local">
-                    <label for="threat-local">
-                        <span class="suite-name">Local</span>
-                        <span class="suite-description">Focus on local threats and privilege escalation scenarios</span>
-                    </label>
-                </div>
-            </div>
-            <div class="help-text">Select the threat model to focus the analysis on specific security scenarios</div>
-        </div>
-    </div>
-    <div class="section scan-section">
-        <h3>🔤 Language Selection</h3>
-        <div class="form-group">
-            <label for="languages">Programming Languages:</label>
-            <div id="languagesContainer">
-                <div id="languagesList" style="display: none;">
-                    <!-- Language checkboxes will be populated here -->
-                </div>
-                <div style="margin-bottom: 20px;">
-                    <button onclick="loadSupportedLanguages()" id="loadLanguagesButton" type="button" class="action-button futuristic-load-btn" style="min-width: auto; padding: 12px 20px; font-size: 13px;">
-                        <span class="load-icon">🔄</span>
-                        <span>Load Available Languages</span>
-                    </button>
-                </div>
-            </div>
-            <div class="help-text">Select the programming languages to analyze. Languages are auto-detected from your CodeQL CLI installation.</div>
-        </div>
+          </div>
+      </div>
     </div>
 
     <div id="message"></div>
@@ -1997,10 +2586,15 @@ export class UiProvider implements vscode.WebviewViewProvider {
         
         function saveConfig() {
             console.log('Saving configuration...');
+            
+            // Get GitHub URL
+            const githubUrl = document.getElementById('githubUrl').value.trim();
+            
             const config = {
                 suites: [getSelectedSuite()],
                 languages: getSelectedLanguages(),
-                threatModel: getSelectedThreatModel()
+                threatModel: getSelectedThreatModel(),
+                githubUrl: githubUrl
             };
             
             console.log('Configuration to save:', config);
@@ -2205,11 +2799,177 @@ export class UiProvider implements vscode.WebviewViewProvider {
         }
         
         function loadConfig() {
-            vscode.postMessage({ command: 'loadConfig' });
+            vscode.postMessage({
+                command: 'loadConfig'
+            });
+        }
+
+        function updateRepositoryInfo() {
+            const owner = document.getElementById('githubOwner').value.trim();
+            const repo = document.getElementById('githubRepo').value.trim();
+            const githubUrl = document.getElementById('githubUrl').value.trim();
+            
+            if (!owner || !repo) {
+                showMessage('Repository owner and name are required', 'error');
+                return;
+            }
+            
+            // Disable buttons during update
+            document.getElementById('updateRepoButton').disabled = true;
+            document.getElementById('checkCodeQLButton').disabled = true;
+            
+            vscode.postMessage({
+                command: 'updateRepositoryInfo',
+                owner: owner,
+                repo: repo,
+                url: githubUrl
+            });
+        }
+        
+        function checkCodeQLEnabled() {
+            // Show loading state
+            const button = document.getElementById('checkCodeQLButton');
+            const checkIcon = button.querySelector('.check-icon');
+            const checkText = button.querySelector('span:last-child');
+            
+            button.disabled = true;
+            checkIcon.textContent = '⏳';
+            checkText.textContent = 'Checking...';
+            
+            // Clear previous status
+            const statusMessage = document.getElementById('codeqlStatusMessage');
+            statusMessage.style.display = 'none';
+            
+            vscode.postMessage({
+                command: 'checkCodeQLEnabled'
+            });
+        }
+        
+        function updateCodeQLStatus(success, enabled, message) {
+            const statusMessage = document.getElementById('codeqlStatusMessage');
+            statusMessage.style.display = 'block';
+            
+            // Get references to the repository section elements
+            const repoHeader = document.querySelector('#repo-settings h3');
+            const repoContent = document.getElementById('repo-content');
+            
+            // Get references to the sections we need to show/hide
+            const scanSettings = document.getElementById('scanSettings');
+            const securityDashboard = document.getElementById('summarySection');
+            const scanConfiguration = document.getElementById('scan-configuration');
+            const scanConfigContent = document.getElementById('scan-config-content');
+            const scanConfigHeader = document.querySelector('#scan-configuration h3');
+            const languageSection = document.getElementById('languages-selection');
+            const languageContent = document.getElementById('language-content');
+            const languageHeader = document.querySelector('#languages-selection h3');
+            
+            if (success) {
+                if (enabled) {
+                    // CodeQL is enabled
+                    statusMessage.style.backgroundColor = 'rgba(40, 167, 69, 0.1)';
+                    statusMessage.style.border = '1px solid #28a745';
+                    statusMessage.style.color = '#28a745';
+                    statusMessage.innerHTML = '✅ ' + message;
+                    
+                    // Collapse the repository section since it's configured correctly
+                    if (repoHeader) repoHeader.classList.add('collapsed');
+                    if (repoContent) repoContent.classList.add('collapsed');
+                    
+                    // Show all CodeQL-dependent sections
+                    if (scanSettings) scanSettings.style.display = 'block';
+                    if (securityDashboard) securityDashboard.style.display = 'block';
+                    if (scanConfiguration) scanConfiguration.style.display = 'block';
+                    if (languageSection) languageSection.style.display = 'block';
+                    
+                    // Keep sections collapsed by default, but make them visible
+                    if (scanConfigHeader) scanConfigHeader.classList.add('collapsed');
+                    if (scanConfigContent) scanConfigContent.classList.add('collapsed');
+                    if (languageHeader) languageHeader.classList.add('collapsed');
+                    if (languageContent) languageContent.classList.add('collapsed');
+                } else {
+                    // CodeQL is not enabled
+                    statusMessage.style.backgroundColor = 'rgba(255, 193, 7, 0.1)';
+                    statusMessage.style.border = '1px solid #ffc107';
+                    statusMessage.style.color = '#ffc107';
+                    statusMessage.innerHTML = '⚠️ ' + message + '<br><small>You must enable CodeQL in repository settings before scanning.</small>';
+                    
+                    // Hide CodeQL-dependent sections
+                    if (scanSettings) scanSettings.style.display = 'none';
+                    if (securityDashboard) securityDashboard.style.display = 'none';
+                    if (scanConfiguration) scanConfiguration.style.display = 'none';
+                    if (languageSection) languageSection.style.display = 'none';
+                }
+            } else {
+                // Error checking CodeQL status
+                statusMessage.style.backgroundColor = 'rgba(220, 53, 69, 0.1)';
+                statusMessage.style.border = '1px solid #dc3545';
+                statusMessage.style.color = '#dc3545';
+                statusMessage.innerHTML = '❌ ' + message;
+                
+                // Hide CodeQL-dependent sections on error
+                if (scanSettings) scanSettings.style.display = 'none';
+                if (securityDashboard) securityDashboard.style.display = 'none';
+                if (scanConfiguration) scanConfiguration.style.display = 'none';
+                if (languageSection) languageSection.style.display = 'none';
+                
+                // Expand the repository section to allow user to fix configuration
+                if (repoHeader) repoHeader.classList.remove('collapsed');
+                if (repoContent) repoContent.classList.remove('collapsed');
+                
+                // Hide CodeQL-dependent sections
+                if (scanSettings) scanSettings.style.display = 'none';
+            }
+            
+            // Reset check button
+            const button = document.getElementById('checkCodeQLButton');
+            const checkIcon = button.querySelector('.check-icon');
+            const checkText = button.querySelector('span:last-child');
+            
+            button.disabled = false;
+            checkIcon.textContent = '✓';
+            checkText.textContent = 'Check CodeQL Status';
+            
+            // Enable update button as well
+            document.getElementById('updateRepoButton').disabled = false;
+        }
+        
+        function setRepositoryInfo(owner, repo) {
+            document.getElementById('githubOwner').value = owner || '';
+            document.getElementById('githubRepo').value = repo || '';
         }
         
         function testConnection() {
             vscode.postMessage({ command: 'testConnection' });
+        }
+        
+        function toggleRepoSection() {
+            const repoHeader = document.querySelector('#repo-settings h3');
+            const repoContent = document.getElementById('repo-content');
+            
+            if (repoHeader && repoContent) {
+                repoHeader.classList.toggle('collapsed');
+                repoContent.classList.toggle('collapsed');
+            }
+        }
+        
+        function toggleScanConfigSection() {
+            const configHeader = document.querySelector('#scan-configuration h3');
+            const configContent = document.getElementById('scan-config-content');
+            
+            if (configHeader && configContent) {
+                configHeader.classList.toggle('collapsed');
+                configContent.classList.toggle('collapsed');
+            }
+        }
+        
+        function toggleLanguageSection() {
+            const langHeader = document.querySelector('#languages-selection h3');
+            const langContent = document.getElementById('language-content');
+            
+            if (langHeader && langContent) {
+                langHeader.classList.toggle('collapsed');
+                langContent.classList.toggle('collapsed');
+            }
         }
         
         function runLocalScan() {
@@ -2393,6 +3153,20 @@ export class UiProvider implements vscode.WebviewViewProvider {
                     } else {
                         console.log('No languages found in config, defaulting to empty selection');
                     }
+                    
+                    // Set GitHub URL if available
+                    if (config.githubUrl) {
+                        document.getElementById('githubUrl').value = config.githubUrl.replace('https://api.github.com', '');
+                    }
+                    
+                    // Check CodeQL status automatically if repository is configured
+                    if (config.githubOwner && config.githubRepo) {
+                        setRepositoryInfo(config.githubOwner, config.githubRepo);
+                        setTimeout(() => {
+                            // Trigger a check to properly set repository section visibility
+                            checkCodeQLEnabled();
+                        }, 500);
+                    }
                     break;
 
                 case 'supportedLanguagesLoaded':
@@ -2565,8 +3339,48 @@ export class UiProvider implements vscode.WebviewViewProvider {
                 case 'alertsSummaryLoaded':
                     updateAlertsSummary(message.summary);
                     break;
+                    
+                case 'codeqlStatusChecked':
+                    updateCodeQLStatus(message.success, message.enabled, message.message);
+                    setRepositoryInfo(message.owner, message.repo);
+                    
+                    // Update scan and fetch buttons based on CodeQL status
+                    const scanBtn = document.getElementById('scanButton');
+                    const fetchBtn = document.getElementById('fetchButton');
+                    
+                    if (message.success && message.enabled) {
+                        scanBtn.disabled = false;
+                        fetchBtn.disabled = false;
+                    } else {
+                        // Only disable buttons if CodeQL is not enabled (don't disable on check failure)
+                        if (message.success) {
+                            scanBtn.disabled = !message.enabled;
+                            fetchBtn.disabled = !message.enabled;
+                        }
+                    }
+                    break;
+                    
+                case 'repositoryInfoUpdated':
+                    document.getElementById('updateRepoButton').disabled = false;
+                    showMessage(message.message, !message.success);
+                    break;
+                
+                case 'scanBlocked':
+                case 'fetchBlocked':
+                    showMessage(message.message, true);
+                    break;
             }
         });
+        
+        // Initialize repository section (expanded by default)
+        const repoHeader = document.querySelector('#repo-settings h3');
+        const repoContent = document.getElementById('repo-content');
+        
+        if (repoHeader && repoContent) {
+            // Start with repository section expanded
+            repoHeader.classList.remove('collapsed');
+            repoContent.classList.remove('collapsed');
+        }
         
         // Load configuration on startup
         loadConfig();

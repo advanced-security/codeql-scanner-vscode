@@ -127,14 +127,23 @@ export class GitHubService {
    * Update the GitHub token used for authentication.
    * @param token GitHub token to use for authentication
    */
-  public updateToken(token: string) {
+  public updateToken(token: string, baseUrl?: string) {
+    const config = vscode.workspace.getConfiguration("codeql-scanner");
+    const apiUrl = baseUrl || config.get<string>("github.baseUrl", "https://api.github.com");
+    
     this.octokit = new Octokit({
       auth: token,
+      baseUrl: apiUrl
     });
-    this.logger.info("GitHubService", "GitHub token updated");
-    vscode.workspace
-      .getConfiguration("codeql-scanner")
-      .update("github.token", token, vscode.ConfigurationTarget.Global);
+    
+    this.logger.info(
+      "GitHubService", 
+      "GitHub token and base URL updated", 
+      { baseUrl: apiUrl }
+    );
+    
+    // Update the token in configuration
+    config.update("github.token", token, vscode.ConfigurationTarget.Global);
   }
 
   public async getRepositoryInfo(): Promise<RepositoryInfo> {
@@ -267,6 +276,48 @@ export class GitHubService {
       this.logger.debug(
         "GitHubService",
         `CodeQL status check failed for ${owner}/${repo}`,
+        error
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Check if CodeQL is enabled for a repository
+   * @param owner Repository owner
+   * @param repo Repository name
+   * @returns Promise resolving to true if CodeQL is enabled, false otherwise
+   */
+  public async isCodeQLEnabled(owner: string, repo: string): Promise<boolean> {
+    this.logger.logServiceCall("GitHubService", "isCodeQLEnabled", "started", {
+      owner,
+      repo,
+    });
+
+    if (!this.octokit) {
+      this.logger.warn(
+        "GitHubService",
+        "GitHub token not configured for checking CodeQL status"
+      );
+      return false;
+    }
+
+    try {
+      const codeqlStatus = await this.getCodeQLStatus(owner, repo);
+      
+      this.logger.logServiceCall(
+        "GitHubService", 
+        "isCodeQLEnabled", 
+        "completed", 
+        { owner, repo, enabled: codeqlStatus }
+      );
+      
+      return codeqlStatus;
+    } catch (error) {
+      this.logger.logServiceCall(
+        "GitHubService", 
+        "isCodeQLEnabled", 
+        "failed", 
         error
       );
       return false;

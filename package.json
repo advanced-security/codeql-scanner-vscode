@@ -2,7 +2,7 @@
     "name": "codeql-scanner-vscode",
     "displayName": "CodeQL Scanner",
     "description": "VSCode extension for CodeQL to scan and analyze code for vulnerabilities using GitHub's CodeQL.",
-    "version": "0.1.2",
+    "version": "0.2.0",
     "repository": {
         "type": "git",
         "url": "https://github.com/geekmasher/codeql-scanner-vscode.git"
@@ -37,17 +37,20 @@
             {
                 "command": "codeql-scanner.scan",
                 "title": "CodeQL: Run Scan",
-                "category": "CodeQL Scanner"
+                "category": "CodeQL Scanner",
+                "enablement": "codeql-scanner.codeQLEnabled"
             },
             {
                 "command": "codeql-scanner.init",
                 "title": "CodeQL: Initialize Repository",
-                "category": "CodeQL Scanner"
+                "category": "CodeQL Scanner",
+                "enablement": "codeql-scanner.codeQLEnabled"
             },
             {
                 "command": "codeql-scanner.analysis",
                 "title": "CodeQL: Run Analysis",
-                "category": "CodeQL Scanner"
+                "category": "CodeQL Scanner",
+                "enablement": "codeql-scanner.codeQLEnabled"
             },
             {
                 "command": "codeql-scanner.configure",
@@ -194,15 +197,15 @@
             "commandPalette": [
                 {
                     "command": "codeql-scanner.scan",
-                    "when": "workspaceContainsCodeqlConfig || true"
+                    "when": "(workspaceContainsCodeqlConfig || true) && codeql-scanner.codeQLEnabled"
                 },
                 {
                     "command": "codeql-scanner.init",
-                    "when": "workspaceContainsCodeqlConfig || true"
+                    "when": "(workspaceContainsCodeqlConfig || true) && codeql-scanner.codeQLEnabled"
                 },
                 {
                     "command": "codeql-scanner.analysis",
-                    "when": "workspaceContainsCodeqlConfig || true"
+                    "when": "(workspaceContainsCodeqlConfig || true) && codeql-scanner.codeQLEnabled"
                 },
                 {
                     "command": "codeql-scanner.configure",
@@ -224,7 +227,8 @@
             "explorer/context": [
                 {
                     "command": "codeql-scanner.scan",
-                    "group": "codeql@1"
+                    "group": "codeql@1",
+                    "when": "codeql-scanner.codeQLEnabled"
                 }
             ],
             "view/item/context": [
