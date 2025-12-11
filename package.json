@@ -305,6 +305,6 @@
         "@octokit/rest": "^22.0.0",
         "@types/js-yaml": "^4.0.9",
         "axios": "^1.12.0",
-        "js-yaml": "^4.1.0"
+        "js-yaml": "^4.1.1"
     }
 }
