@@ -289,22 +289,22 @@
         "@types/chai": "^5.2.2",
         "@types/mocha": "^10.0.10",
         "@types/node": "24.x",
-        "@types/sinon": "^17.0.4",
-        "@types/vscode": "^1.100.0",
-        "@typescript-eslint/eslint-plugin": "^8.42.0",
+        "@types/sinon": "^21.0.0",
+        "@types/vscode": "^1.106.0",
+        "@typescript-eslint/eslint-plugin": "^8.46.4",
         "@typescript-eslint/parser": "^8.42.0",
-        "chai": "^6.0.1",
-        "eslint": "^9.34.0",
-        "mocha": "^11.7.2",
+        "chai": "^6.2.1",
+        "eslint": "^9.39.1",
+        "mocha": "^11.7.5",
         "sinon": "^21.0.0",
         "ts-node": "^10.9.2",
-        "typescript": "^5.9.2",
+        "typescript": "^5.9.3",
         "vscode-test": "^1.6.1"
     },
     "dependencies": {
         "@octokit/rest": "^22.0.0",
         "@types/js-yaml": "^4.0.9",
-        "axios": "^1.11.0",
+        "axios": "^1.12.0",
         "js-yaml": "^4.1.0"
     }
 }
