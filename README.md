@@ -70,10 +70,11 @@ Here are some screenshots showcasing the extension's capabilities:
 
 ## 📋 Prerequisites
 
-- **CodeQL CLI**: The extension requires the [CodeQL CLI](https://github.com/github/codeql-cli-binaries/releases) to be installed and available on your system PATH
-  - Download the latest release for your platform from the [CodeQL CLI releases page](https://github.com/github/codeql-cli-binaries/releases)
-  - Extract the archive and add the `codeql` binary to your system PATH
-  - Verify installation by running `codeql --version` in your terminal
+- **CodeQL CLI**: The extension can automatically install the [CodeQL CLI](https://github.com/github/codeql-cli-binaries/releases) for you
+  - ✨ **Auto-Discovery**: The extension will automatically detect CodeQL CLI from GitHub's CodeQL extension if installed
+  - ✨ **Auto-Install**: If CodeQL CLI is not found, the extension will offer to download and install it automatically
+  - **Manual Install**: You can also download the latest release manually from the [CodeQL CLI releases page](https://github.com/github/codeql-cli-binaries/releases) and configure the path in settings
+  - **Verification**: Use `CodeQL: Show CLI Information` command to check your installation
 
 - **GitHub Personal Access Token**: For GitHub integration features, a GitHub token with appropriate permissions is required
   - Create a token at [GitHub Settings > Developer settings > Personal access tokens](https://github.com/settings/tokens)
@@ -92,6 +93,7 @@ Here are some screenshots showcasing the extension's capabilities:
 | `CodeQL: Clear Logs`               | Clear all log entries                          |
 | `CodeQL: Clear Inline Diagnostics` | Remove inline problem markers                  |
 | `CodeQL: Show CLI Information`     | Display information about the CodeQL CLI       |
+| `CodeQL: Install/Update CLI`       | ✨ Download and install CodeQL CLI automatically |
 | `CodeQL: Copy Flow Path`           | Copy vulnerability data flow path to clipboard |
 | `CodeQL: Navigate Flow Steps`      | Step through vulnerability data flow paths     |
 
@@ -101,9 +103,20 @@ The extension provides several configuration options to customize its behavior:
 
 ```json
 {
-  "codeql-scanner.github.token": "your-github-token"
+  "codeql-scanner.github.token": "your-github-token",
+  "codeql-scanner.codeqlPath": "codeql",
+  "codeql-scanner.autoDetectGitHubExtension": true,
+  "codeql-scanner.autoInstallCodeQL": true,
+  "codeql-scanner.useLocalScan": true
 }
 ```
+
+### Key Configuration Options
+
+- **`autoDetectGitHubExtension`** (default: `true`): Automatically detect and use CodeQL CLI from GitHub's CodeQL extension if available
+- **`autoInstallCodeQL`** (default: `true`): Automatically download and install CodeQL CLI from GitHub if not found
+- **`codeqlPath`**: Path to the CodeQL CLI executable (automatically configured when using auto-install)
+- **`useLocalScan`** (default: `true`): Use local CodeQL CLI for scanning instead of GitHub Actions
 
 ## 💡 Why CodeQL Scanner?
 
