@@ -302,7 +302,7 @@
         "vscode-test": "^1.6.1"
     },
     "dependencies": {
-        "@octokit/rest": "^22.0.0",
+        "@octokit/rest": "^22.0.1",
         "@types/js-yaml": "^4.0.9",
         "axios": "^1.13.5",
         "js-yaml": "^4.1.1"
