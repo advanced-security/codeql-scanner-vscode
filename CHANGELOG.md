@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Updated TypeScript compilation target and lib from `ES2020` to `ES2022` to support `ErrorOptions` type used by updated `@octokit/request-error` dependency
+- Added explicit `types: ["node", "vscode"]` to `tsconfig.json` for TypeScript 6 compatibility (TypeScript 6 no longer implicitly includes `@types/node`)
+- Migrated ESLint configuration from `.eslintrc.json` to `eslint.config.js` (flat config) for ESLint 10 compatibility
 
 ## [0.1.0] - 2025-06-26
 
