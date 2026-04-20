@@ -304,7 +304,7 @@
     "dependencies": {
         "@octokit/rest": "^22.0.1",
         "@types/js-yaml": "^4.0.9",
-        "axios": "^1.13.6",
+        "axios": "^1.15.1",
         "js-yaml": "^4.1.1"
     }
 }
