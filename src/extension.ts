@@ -69,6 +69,43 @@ export async function activate(context: vscode.ExtensionContext) {
             resultsProvider.clearResults();
             vscode.window.showInformationMessage('CodeQL diagnostics cleared.');
         }),
+        vscode.commands.registerCommand('codeql-scanner.showCodeQLInfo', async () => {
+            try {
+                const version = await codeqlService.getVersion();
+                const config = vscode.workspace.getConfiguration("codeql-scanner");
+                const codeqlPath = config.get<string>("codeqlPath", "codeql");
+                
+                vscode.window.showInformationMessage(
+                    `CodeQL CLI Info:\nVersion: ${version}\nPath: ${codeqlPath}`,
+                    { modal: true }
+                );
+            } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                vscode.window.showErrorMessage(`CodeQL CLI Info: ${errorMessage}`);
+            }
+        }),
+        vscode.commands.registerCommand('codeql-scanner.installCodeQL', async () => {
+            try {
+                await vscode.window.withProgress({
+                    location: vscode.ProgressLocation.Notification,
+                    title: "Installing CodeQL CLI",
+                    cancellable: true
+                }, async (progress, token) => {
+                    // Force installation
+                    const releaseInfo = await codeqlService.getLatestCodeQLRelease();
+                    const installedPath = await codeqlService.downloadAndInstallCodeQL(releaseInfo, progress, token);
+                    
+                    if (installedPath) {
+                        const config = vscode.workspace.getConfiguration("codeql-scanner");
+                        await config.update("codeqlPath", installedPath, vscode.ConfigurationTarget.Global);
+                        vscode.window.showInformationMessage(`CodeQL CLI installed successfully at: ${installedPath}`);
+                    }
+                });
+            } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                vscode.window.showErrorMessage(`Failed to install CodeQL CLI: ${errorMessage}`);
+            }
+        }),
         vscode.commands.registerCommand('codeql-scanner.copyFlowPath', async (item) => {
             if (item && item.result && item.result.flowSteps) {
                 const flowPath = item.result.flowSteps.map((step: any, index: number) => {
