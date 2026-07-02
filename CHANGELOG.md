@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Migrated ESLint configuration from `.eslintrc.json` to `eslint.config.js` (flat config) for ESLint 10 compatibility
 
 ### Security
-- Bumped `axios` from 1.13.6 to 1.16.0+ to address multiple security vulnerabilities including ReDoS via cookie name injection, prototype pollution gadgets enabling credential theft and request hijacking, and proxy-authorization header leaks across HTTP-to-HTTPS redirects
+- Bumped `axios` from 1.15.1 to 1.16.0+ to address multiple security vulnerabilities including ReDoS via cookie name injection, prototype pollution gadgets enabling credential theft and request hijacking, and proxy-authorization header leaks across HTTP-to-HTTPS redirects
 
 ## [0.1.0] - 2025-06-26
 
